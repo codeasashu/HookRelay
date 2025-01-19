@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package dispatcher;
+
+option go_package = "github.com/codeasashu/dispatcher/pkg/proto";
+
+import "google/protobuf/struct.proto";
+
+// Event message structure
+message Event {
+  google.protobuf.Struct payload = 1;
+  string owner_id = 2;
+  string event_type = 4;
+}
+
+service Dispatcher {
+  rpc SendEvent(Event) returns (Response);
+}
+
+// Response message structure
+message Response {
+  string status = 1;              // Status of the event processing (e.g., "OK", "FAILED")
+  string message = 2;             // Optional message or error details
+}
