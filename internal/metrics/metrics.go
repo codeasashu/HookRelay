@@ -117,7 +117,8 @@ func InitMetrics() *Metrics {
 				Name: "hookrelay_ingest_success_total",
 				Help: "Total number of successful event ingestion",
 			},
-			[]string{eventLabel, eventTypeLabel, listenerLabel},
+			// []string{eventLabel, eventTypeLabel, listenerLabel},
+			[]string{eventTypeLabel, listenerLabel},
 		),
 		IngestLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -172,7 +173,8 @@ func InitMetrics() *Metrics {
 				Help:    "Number of endpoints events are fanned out to",
 				Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 			},
-			[]string{eventLabel, eventTypeLabel},
+			// []string{eventLabel, eventTypeLabel},
+			[]string{eventTypeLabel},
 		),
 		GoroutineCount: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -245,7 +247,8 @@ func (m *Metrics) IncrementIngestSuccessTotal(ev *event.Event) {
 	if !m.IsEnabled {
 		return
 	}
-	m.IngestSuccessTotal.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Inc()
+	// m.IngestSuccessTotal.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Inc()
+	m.IngestSuccessTotal.With(prometheus.Labels{eventTypeLabel: ev.EventType, listenerLabel: "http"}).Inc()
 }
 
 func (m *Metrics) IncrementIngestConsumedTotal(ev *event.Event) {
@@ -266,7 +269,8 @@ func (m *Metrics) RecordFanout(ev *event.Event, size int) {
 	if !m.IsEnabled {
 		return
 	}
-	m.FanoutSize.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType}).Observe(float64(size))
+	// m.FanoutSize.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType}).Observe(float64(size))
+	m.FanoutSize.With(prometheus.Labels{eventTypeLabel: ev.EventType}).Observe(float64(size))
 }
 
 func (m *Metrics) UpdateGoroutineCount(routineType string) {
