@@ -22,8 +22,11 @@ port = 8081
 
 [worker]
 scan_duration = 100
-min_threads = 50
-max_threads = 100
+min_threads = 1
+max_threads = 2
+
+[metrics]
+enabled = true
 `
 )
 
@@ -47,10 +50,15 @@ type WorkerConfig struct {
 	MaxThreads   int `mapstructure:"max_threads"`
 }
 
+type MetricsConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
 type Config struct {
 	Listener ListenerConfig `mapstructure:"listener"`
 	Api      ApiConfig      `mapstructure:"api"`
 	Worker   WorkerConfig   `mapstructure:"worker"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
 }
 
 var HRConfig Config

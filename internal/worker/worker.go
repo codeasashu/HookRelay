@@ -66,7 +66,7 @@ func NewWorker(id, minThreads, maxThreads int) *Worker {
 }
 
 func (w *Worker) Start() {
-	log.Printf("Starting worker %+v\n", w)
+	log.Printf("Starting dispatcher worker %d with %d threads (max=%d) \n", w.ID, w.MinThreads, w.MaxThreads)
 	// Start with the minimum number of threads.
 	for i := 0; i < w.MinThreads; i++ {
 		w.launchThread()
@@ -111,31 +111,30 @@ func (w *Worker) scaleThreads(interval time.Duration) {
 // launchThread starts a new thread to process jobs.
 func (w *Worker) launchThread() {
 	w.wg.Add(1)
-	active := atomic.LoadInt32(&w.activeThreads)
+	// active := atomic.LoadInt32(&w.activeThreads)
 	atomic.AddInt32(&w.activeThreads, 1)
 
-	log.Printf("Increased Worker %d threads from %d to %d\n", w.ID, active, active+1)
+	// log.Printf("Increased Worker %d threads from %d to %d\n", w.ID, active, active+1)
 	go func() {
 		defer func() {
 			w.wg.Done()
-			active := atomic.LoadInt32(&w.activeThreads)
+			// active := atomic.LoadInt32(&w.activeThreads)
 			atomic.AddInt32(&w.activeThreads, -1)
-			log.Printf("Decreased Worker %d threads from %d to %d\n", w.ID, active, active-1)
+			// log.Printf("Decreased Worker %d threads from %d to %d\n", w.ID, active, active-1)
 		}()
 
 		for {
 			select {
 			case job := <-w.JobQueue:
-
-				// job.Event.AddLatencyTimestamp("worker_start")
+				job.Subscription.Dispatch()
 				// Simulate job processing.
 				err := processJob(job)
+				job.Subscription.Complete()
 				status := "success"
 				if err != nil {
 					status = "failed"
 				}
 
-				// job.Event.AddLatencyTimestamp("worker_end")
 				// Send result to result queue.
 				log.Printf("Sending result to jobresult queue %s\n", job.ID)
 				w.ResultQueue <- &JobResult{

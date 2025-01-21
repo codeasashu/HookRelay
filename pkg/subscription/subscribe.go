@@ -4,14 +4,36 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"time"
 
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/target"
 )
 
+var m *metrics.Metrics
+
 type Subscription struct {
+	// lock    *sync.RWMutex
 	ID      string
 	OwnerId string         `json:"owner_id" binding:"required"`
 	Target  *target.Target `json:"target" binding:"required"`
+
+	CreatedAt    time.Time
+	StartedAt    time.Time
+	DispatchedAt time.Time
+	CompleteAt   time.Time
+}
+
+func (e *Subscription) Dispatch() {
+	// e.lock.Lock()
+	e.DispatchedAt = time.Now()
+	// e.lock.Unlock()
+}
+
+func (e *Subscription) Complete() {
+	// e.lock.Lock()
+	e.CompleteAt = time.Now()
+	// e.lock.Unlock()
 }
 
 func (s *Subscription) Validate() error {
@@ -47,11 +69,14 @@ func (s *createSubscription) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	temp.ID = iid
+	// temp.lock = &sync.RWMutex{}
+	temp.CreatedAt = time.Now()
 	return nil
 }
 
 type EventSubscrptions struct {
-	Subscriptions map[string][]*Subscription // Mapping of eventType and Subsciptions
+	Subscriptions      map[string][]*Subscription // Mapping of eventType and Subsciptions
+	TotalSubscriptions int
 }
 
 var es *EventSubscrptions
@@ -60,11 +85,12 @@ func Init() {
 	es = &EventSubscrptions{
 		Subscriptions: make(map[string][]*Subscription),
 	}
+	m = metrics.GetDPInstance()
 }
 
 func (e *EventSubscrptions) Add(eventType string, subscription *Subscription) {
-	// @TODO: Check if subscription already exists, by matching md5(target) for given subscription's owner id
 	e.Subscriptions[eventType] = append(es.Subscriptions[eventType], subscription)
+	e.TotalSubscriptions += len(es.Subscriptions[eventType])
 }
 
 func CreateSubscription(eventType string, subscription *Subscription) error {
@@ -72,7 +98,8 @@ func CreateSubscription(eventType string, subscription *Subscription) error {
 	if err != nil {
 		return err
 	}
-	es.Add(eventType, subscription)
+	es.Subscriptions[eventType] = append(es.Subscriptions[eventType], subscription)
+	m.UpdateTotalSubscriptionCount(len(es.Subscriptions[eventType]))
 	return nil
 }
 

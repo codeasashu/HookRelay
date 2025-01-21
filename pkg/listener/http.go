@@ -10,7 +10,10 @@ import (
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 )
+
+var m *metrics.Metrics
 
 type HTTPListener struct {
 	ListenerChan chan event.Event
@@ -30,11 +33,12 @@ func (l *HTTPListener) setupWorkers() {
 func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
 	decoder := json.NewDecoder(req.Body)
 	event := event.New()
-	// event.AddLatencyTimestamp("http_listener_start")
 	err := decoder.Decode(event)
 	if err != nil {
 		return nil, errors.New("failed to decode event payload. invalid json")
 	}
+	m.IncrementIngestTotal()
+	event.Ack()
 	log.Printf("Event ID - %s\n", event.EventType)
 	return event, nil
 }
@@ -43,12 +47,12 @@ func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received HTTP Event")
 	// i := r.URL.Query().Get("id")
 	e, err := l.transformEvent(r)
+	m.RecordIngestLatency(e)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(err.Error()))
 		return
 	}
-	// e.AddLatencyTimestamp("http_listener_end")
 	l.ListenerChan <- *e
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Event received"))
@@ -56,6 +60,7 @@ func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
+	m = metrics.GetDPInstance()
 	listener := &HTTPListener{
 		server: &http.Server{
 			Addr: addr,
