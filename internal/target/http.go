@@ -59,11 +59,6 @@ func (target *Target) ProcessTarget(payload interface{}) error {
 		return errors.New("missing HTTP details in target")
 	}
 
-	if target.HTTPDetails.Method != "POST" {
-		log.Printf("unsupported HTTP method: %v", target.HTTPDetails.Method)
-		return errors.New("unsupported HTTP Method")
-	}
-
 	// Marshal payload into JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
