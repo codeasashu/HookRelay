@@ -27,6 +27,10 @@ max_threads = -1
 
 [metrics]
 enabled = true
+
+[logging]
+log_level = "info"  # possible values: "debug", "info", "warn", "error" (default=info)
+log_format = "json"  # possible values: "json", "console" (default=json)
 `
 )
 
@@ -54,11 +58,17 @@ type MetricsConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
 
+type LoggingConfig struct {
+	LogLevel  string `mapstructure:"log_level"`
+	LogFormat string `mapstructure:"log_format"`
+}
+
 type Config struct {
 	Listener ListenerConfig `mapstructure:"listener"`
 	Api      ApiConfig      `mapstructure:"api"`
 	Worker   WorkerConfig   `mapstructure:"worker"`
 	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	Logging  LoggingConfig  `mapstructure:"logging"`
 }
 
 var HRConfig Config

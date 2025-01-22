@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -50,26 +50,26 @@ func Run(t *Target) (string, error) {
 
 func (target *Target) ProcessTarget(payload interface{}) error {
 	if target.Type != TargetHTTP {
-		log.Printf("unsupported target type: %s \n", target.Type)
+		slog.Error("unsupported target type", "type", target.Type)
 		return errors.New("unsupported target type")
 	}
 
 	if target.HTTPDetails == nil {
-		log.Print("missing HTTP details in target")
+		slog.Info("missing HTTP details in target")
 		return errors.New("missing HTTP details in target")
 	}
 
 	// Marshal payload into JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("failed to marshal payload: %s", err)
+		slog.Error("failed to marshal payload", "err", err)
 		return err
 	}
 
 	// Create HTTP request
 	req, err := http.NewRequest(string(target.HTTPDetails.Method), target.HTTPDetails.URL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		log.Printf("failed to create HTTP request: %s", err)
+		slog.Error("failed to create HTTP request", "err", err)
 		return err
 	}
 
@@ -87,7 +87,7 @@ func (target *Target) ProcessTarget(payload interface{}) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("failed to send HTTP request: %s", err)
+		slog.Error("failed to send HTTP request", "err", err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -95,7 +95,7 @@ func (target *Target) ProcessTarget(payload interface{}) error {
 	// Read and log the response (for debugging purposes)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("failed to read HTTP response: %s", err)
+		slog.Info("failed to read HTTP response", "err", err)
 		return err
 	}
 
@@ -104,11 +104,10 @@ func (target *Target) ProcessTarget(payload interface{}) error {
 		Code:   resp.StatusCode,
 		Body:   body,
 	}
-	log.Printf("HTTP Response: %s\n", body)
-	log.Printf("HTTP Status: %s\n", resp.Status)
+	slog.Info("got http reply", "status", resp.Status)
 	if resp.StatusCode != 200 {
 		targetResponse.Status = TargetStatus(StatusErr)
-		log.Printf("HTTP Status: %s\n", resp.Status)
+		slog.Error("invalid http status", "status", resp.Status)
 		return errors.New("Non-200 Status: " + resp.Status)
 	}
 

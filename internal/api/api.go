@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,12 +34,12 @@ func InitApiServer() *ApiServer {
 }
 
 func (a *ApiServer) Start() error {
-	log.Printf("Starting API server on addr: %s\n", a.server.Addr)
+	slog.Info("Starting API server", "addr", a.server.Addr)
 	return a.server.ListenAndServe()
 }
 
 func (a *ApiServer) Shutdown(ctx context.Context) {
-	log.Println("Shutting down API server...")
+	slog.Warn("Shutting down API server...")
 	if err := a.server.Shutdown(ctx); err != nil {
 		log.Fatal("API Server forced to shutdown:", err)
 	}

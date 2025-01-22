@@ -1,7 +1,7 @@
 package subscription
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/codeasashu/HookRelay/internal/api"
@@ -32,6 +32,6 @@ func createSubscriptionHandler(c *gin.Context) {
 		c.JSON(400, gin.H{"status": "error", "error": err.Error()})
 		return
 	}
-	log.Printf("Received Subscription for eventType=%s\n", subscription.ID)
+	slog.Info("Received Subscription", "id", subscription.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "success"})
 }

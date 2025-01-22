@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/codeasashu/HookRelay/internal/config"
@@ -24,7 +24,7 @@ type HTTPListener struct {
 
 func (l *HTTPListener) setupWorkers() {
 	numWorkers := config.HRConfig.Listener.Http.Workers
-	log.Printf("Setting %d HTTP workers\n", numWorkers)
+	slog.Info("Setting HTTP workers", "num", numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		go l.dispatcher.ListenForEvents(l.ListenerChan)
 	}
@@ -39,12 +39,12 @@ func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
 	}
 	m.IncrementIngestTotal()
 	event.Ack()
-	log.Printf("Event ID - %s\n", event.EventType)
+	slog.Info("Acknowledge evnet", "id", event.UID, "type", event.EventType)
 	return event, nil
 }
 
 func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Received HTTP Event")
+	slog.Info("Received HTTP Event")
 	// i := r.URL.Query().Get("id")
 	e, err := l.transformEvent(r)
 	m.RecordIngestLatency(e)
@@ -56,7 +56,7 @@ func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
 	l.ListenerChan <- *e
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Event received"))
-	log.Printf("Replied to HTTP Event")
+	slog.Info("Replied to HTTP Event")
 }
 
 func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
@@ -75,12 +75,13 @@ func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
 func (l *HTTPListener) StartAndReceive() error {
 	l.setupWorkers()
 	http.HandleFunc("/event", l.handler)
-	log.Printf("Starting HTTP listener on addr - %s\n", l.server.Addr)
+	slog.Info("http server starting...", "addr", l.server.Addr)
 	return l.server.ListenAndServe()
 }
 
 func (l *HTTPListener) Shutdown(ctx context.Context) {
+	slog.Info("http server shutdown...")
 	if err := l.server.Shutdown(ctx); err != nil {
-		log.Fatal("HTTP Server forced to shutdown:", err)
+		slog.Error("HTTP Server forced to shutdown", "err", err)
 	}
 }

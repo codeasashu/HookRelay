@@ -1,7 +1,7 @@
 package dispatcher
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -60,16 +60,17 @@ func (d *Dispatcher) listenResults(wrk *worker.Worker) {
 		}
 		d.lock.Lock()
 		d.totalJobs++
-		log.Printf("Job %s completed with status=%s\n", jobResult.Job.ID, jobResult.Status)
+		slog.Info("job completed", "job_id", jobResult.Job.ID, "status", jobResult.Status)
 		if found := d.JobResults[jobResult.Job.Event.UID]; found != nil {
 			d.JobResults[jobResult.Job.Event.UID] = append(d.JobResults[jobResult.Job.Event.UID], jobResult)
 		} else {
 			d.JobResults[jobResult.Job.Event.UID] = []*worker.JobResult{jobResult}
 		}
 		expectedJobs := d.eventJobs[jobResult.Job.Event.UID]
-		if expectedJobs > 0 && expectedJobs == len(d.JobResults[jobResult.Job.Event.UID]) {
+		actualJobs := len(d.JobResults[jobResult.Job.Event.UID])
+		if expectedJobs > 0 && (expectedJobs == actualJobs) {
 			m.RecordEndToEndLatency(jobResult.Job.Event)
-			log.Printf("All jobs for event %s completed\n", jobResult.Job.Event.UID)
+			slog.Info("all jobs completed", "event_id", jobResult.Job.Event.UID, "completed_jobs", actualJobs)
 		}
 		d.lock.Unlock()
 	}
@@ -85,10 +86,10 @@ func (d *Dispatcher) GetJobsByEventUID(eventUID string) []*worker.JobResult {
 
 func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 	for event := range eventChannel {
-		log.Printf("Dispatching Event - %s\n", event.EventType)
+		slog.Info("dispatching event", "id", event.UID, "type", event.EventType)
 		m.RecordPreFlightLatency(&event)
 		subscriptions := subscription.GetSubscriptionsByEventType(event.EventType)
-		log.Printf("Found %d subscriptions for event type - %s\n", len(subscriptions), event.EventType)
+		slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType)
 		m.RecordFanout(&event, len(subscriptions))
 		if len(subscriptions) == 0 {
 			event.CompletedAt = time.Now()
@@ -101,12 +102,12 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 		for _, sub := range subscriptions {
 			sub.StartedAt = time.Now()
 			job := &worker.Job{
-				ID:           "job-" + event.EventType + "-" + time.Now().String(),
+				ID:           event.UID + "-" + sub.ID,
 				Event:        &event,
 				Subscription: sub,
 			}
 			wrk := d.getAvailableWorker()
-			log.Printf("Scheduled job %s for event type - %s\n", job.ID, event.EventType)
+			slog.Info("scheduled job", "job_id", job.ID, "event_type", event.EventType, "worker_id", wrk.ID)
 			m.RecordDispatchLatency(&event)
 			wrk.JobQueue <- job
 		}
@@ -114,9 +115,9 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 }
 
 func (d *Dispatcher) Stop() {
-	log.Println("Shutting down dispatcher...")
+	slog.Info("Shutting down dispatcher...")
 	for _, worker := range d.Workers {
 		worker.Stop()
 	}
-	log.Printf("Total %d jobs processed\n", d.totalJobs)
+	slog.Info("jobs processed", "total", d.totalJobs)
 }

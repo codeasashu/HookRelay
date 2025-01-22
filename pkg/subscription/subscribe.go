@@ -3,7 +3,7 @@ package subscription
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/metrics"
@@ -65,7 +65,7 @@ func (s *createSubscription) UnmarshalJSON(data []byte) error {
 	}
 	iid, err := temp.Target.GetID()
 	if err != nil {
-		log.Println(err)
+		slog.Error("failed to get target id", "err", err)
 		return err
 	}
 	temp.ID = iid

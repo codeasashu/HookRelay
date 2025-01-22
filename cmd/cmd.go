@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +10,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
+	"github.com/codeasashu/HookRelay/internal/logger"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
@@ -21,6 +22,8 @@ var g errgroup.Group
 
 func main() {
 	cli.Execute()
+	slog.SetDefault(logger.New())
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
@@ -49,7 +52,7 @@ func main() {
 		<-ctx.Done()
 
 		// Trigger shutdown handlers
-		log.Println("shutting down...")
+		slog.Info("shutting down...")
 		apiServer.Shutdown(ctx)
 		httpListenerServer.Shutdown(ctx)
 
@@ -58,8 +61,8 @@ func main() {
 
 	if err := g.Wait(); err != nil {
 		disp.Stop()
-		log.Println("Error while waiting for goroutines to complete:", err)
-		log.Fatal(err)
+		slog.Error("Error while waiting for goroutines to complete.", slog.Any("error", err))
+		os.Exit(0)
 	}
 
 	// <-ctx.Done()
