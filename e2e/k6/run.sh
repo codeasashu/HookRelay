@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Default values
 uri=${BASE_URL:-"http://localhost"}
