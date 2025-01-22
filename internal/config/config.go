@@ -24,6 +24,7 @@ port = 8081
 scan_duration = 100
 min_threads = 1
 max_threads = -1
+result_handlers_threads = 10
 
 [metrics]
 enabled = true
@@ -49,9 +50,10 @@ type ApiConfig struct {
 }
 
 type WorkerConfig struct {
-	ScanDuration int `mapstructure:"scan_duration"` // in milliseconds
-	MinThreads   int `mapstructure:"min_threads"`
-	MaxThreads   int `mapstructure:"max_threads"`
+	ScanDuration         int `mapstructure:"scan_duration"` // in milliseconds
+	MinThreads           int `mapstructure:"min_threads"`
+	MaxThreads           int `mapstructure:"max_threads"`
+	ResultHandlerThreads int `mapstructure:"result_handlers_threads"`
 }
 
 type MetricsConfig struct {

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/worker"
@@ -46,7 +47,9 @@ func (d *Dispatcher) Start() {
 
 	// Listen for results
 	for _, wrk := range d.Workers {
-		go d.listenResults(wrk)
+		for i := 0; i < config.HRConfig.Worker.ResultHandlerThreads; i++ {
+			go d.listenResults(wrk)
+		}
 	}
 }
 
