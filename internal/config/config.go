@@ -23,7 +23,7 @@ port = 8081
 [worker]
 scan_duration = 100
 min_threads = 1
-max_threads = 2
+max_threads = -1
 
 [metrics]
 enabled = true

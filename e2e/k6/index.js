@@ -57,35 +57,32 @@ const EVENT_TYPES = [
   "inventory.updated",
 ];
 // const OWNER_IDS = ["owner1", "owner2", "owner3"];
-const OWNER_IDS = ["owner1"];
+const OWNER_IDS = ["owner"];
 
 // Setup function to create endpoints and subscriptions
 export function setup() {
-  // Create subscription for each owner
-  for (let owner of OWNER_IDS) {
-    for (let i = 0; i < 10; i++) {
-      // 10 targets per owner
-
-      const subscription = {
-        owner_id: owner,
-        event_type: EVENT_TYPES[0], // Make this variable lateron
-        target: {
-          type: "http",
-          http_details: {
-            url: "https://httpbin.org/post",
-            method: "POST",
-          },
+  // Create 10 subscription for each event
+  for (let i = 0; i < 10; i++) {
+    // 10 targets per owner
+    const subscription = {
+      owner_id: `owner_${i}`,
+      event_type: EVENT_TYPES[0], // Make this variable lateron
+      target: {
+        type: "http",
+        http_details: {
+          url: "https://httpbin.org/post",
+          method: "POST",
         },
-      };
+      },
+    };
 
-      const res = http.post(
-        "http://localhost:8081/subscriptions",
-        JSON.stringify(subscription),
-        {
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
+    const res = http.post(
+      `${__ENV.BASE_URL}:8081/subscriptions`,
+      JSON.stringify(subscription),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 }
 
@@ -106,7 +103,7 @@ export default function (data) {
     event_type: eventType,
   };
 
-  const res = http.post("http://localhost:8082/event", JSON.stringify(event), {
+  const res = http.post(`${__ENV.BASE_URL}:8082/event`, JSON.stringify(event), {
     headers: { "Content-Type": "application/json" },
   });
 

@@ -24,7 +24,7 @@ type Dispatcher struct {
 
 func NewDispatcher() *Dispatcher {
 	m = metrics.GetDPInstance()
-	wrk := worker.NewWorker(1, -1, -1)
+	wrk := worker.NewWorker()
 	return &Dispatcher{
 		lock:       &sync.RWMutex{},
 		Workers:    []*worker.Worker{wrk},

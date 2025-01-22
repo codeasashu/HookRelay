@@ -37,6 +37,10 @@ type Metrics struct {
 	TotalSubscriptions *prometheus.GaugeVec
 	FanoutSize         *prometheus.HistogramVec
 
+	// Worker Metrics
+	WorkerQueueSize    *prometheus.GaugeVec
+	WorkerThreadsTotal *prometheus.GaugeVec
+
 	// System metrics
 	GoroutineCount *prometheus.GaugeVec
 }
@@ -64,6 +68,8 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 			m.TotalSubscriptions,
 			m.FanoutSize,
 			m.GoroutineCount,
+			m.WorkerQueueSize,
+			m.WorkerThreadsTotal,
 		)
 	}
 	return m
@@ -78,7 +84,8 @@ const (
 	ownerLabel            = "owner_id"
 	subscriptionTypeLabel = "subscription_type"
 	pidLabel              = "pid"
-	routineLabel          = "type"
+	workerLabel           = "worker_id"
+	typeLabel             = "type"
 )
 
 func InitMetrics() *Metrics {
@@ -176,12 +183,26 @@ func InitMetrics() *Metrics {
 			// []string{eventLabel, eventTypeLabel},
 			[]string{eventTypeLabel},
 		),
+		WorkerQueueSize: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hookrelay_worker_queue_size",
+				Help: "Total number of items in the worker queue",
+			},
+			[]string{workerLabel, typeLabel},
+		),
+		WorkerThreadsTotal: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hookrelay_worker_threads_count",
+				Help: "Total number of active workers threads in hookrelay",
+			},
+			[]string{workerLabel, typeLabel},
+		),
 		GoroutineCount: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hookrelay_goroutines_total",
 				Help: "Total number of active subscriptions in hookrelay",
 			},
-			[]string{pidLabel, routineLabel},
+			[]string{pidLabel, typeLabel},
 		),
 	}
 
@@ -273,13 +294,27 @@ func (m *Metrics) RecordFanout(ev *event.Event, size int) {
 	m.FanoutSize.With(prometheus.Labels{eventTypeLabel: ev.EventType}).Observe(float64(size))
 }
 
+func (m *Metrics) UpdateWorkerQueueSize(workerId string, size int) {
+	if !m.IsEnabled {
+		return
+	}
+	m.WorkerQueueSize.With(prometheus.Labels{workerLabel: workerId, typeLabel: "worker"}).Set(float64(size))
+}
+
+func (m *Metrics) UpdateWorkerThreadCount(workerId string, count int) {
+	if !m.IsEnabled {
+		return
+	}
+	m.WorkerThreadsTotal.With(prometheus.Labels{workerLabel: workerId, typeLabel: "worker"}).Set(float64(count))
+}
+
 func (m *Metrics) UpdateGoroutineCount(routineType string) {
 	if !m.IsEnabled {
 		return
 	}
 	pid := fmt.Sprintf("%d", os.Getpid())
 	count := runtime.NumGoroutine()
-	m.GoroutineCount.With(prometheus.Labels{pidLabel: pid, routineLabel: routineType}).Set(float64(count))
+	m.GoroutineCount.With(prometheus.Labels{pidLabel: pid, typeLabel: routineType}).Set(float64(count))
 }
 
 func Reg() *prometheus.Registry {

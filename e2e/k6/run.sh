@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Default values
-uri="http://localhost:8082"
+uri=${BASE_URL:-"http://localhost"}
 vus="10"
 rate="10"
 duration="1m"
@@ -17,7 +17,7 @@ usage() {
 	echo "Usage: $0 [options]"
 	echo ""
 	echo "Options:"
-	echo "-u, --uri           Base URL for outgoing, ingest URL for incoming. Default: http://localhost:5005"
+	echo "-u, --uri           Base URL for outgoing, ingest URL for incoming. Default: http://localhost"
 	echo "-v, --vus           Set how many virtual users should execute the test concurrently. Default: 10"
 	echo "-r, --rate          Set how many requests should be sent per second. Default: 10"
 	echo "-d, --duration      Set how long the test should run. Default: 1m"
