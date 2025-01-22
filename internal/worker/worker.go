@@ -48,15 +48,15 @@ func NewWorker() *Worker {
 	minThreads := config.HRConfig.Worker.MinThreads
 	maxThreads := config.HRConfig.Worker.MaxThreads
 	if maxThreads != -1 && maxThreads < minThreads {
-		slog.Info("Max threads less than min thread. updated from %d to %d\n", maxThreads, minThreads)
+		slog.Warn("max threads less than min thread. updating", "from", maxThreads, "to", minThreads)
 		maxThreads = minThreads
 	}
 
 	m = metrics.GetDPInstance()
 	return &Worker{
 		ID:          ulid.Make().String(),
-		JobQueue:    make(chan *Job, 7500000), // Buffer size for job queue
-		ResultQueue: make(chan *JobResult, 7500000),
+		JobQueue:    make(chan *Job, config.HRConfig.Worker.QueueSize/2), // Buffer size for job queue
+		ResultQueue: make(chan *JobResult, config.HRConfig.Worker.QueueSize/2),
 		MaxThreads:  maxThreads,
 		MinThreads:  minThreads,
 		StopChan:    make(chan struct{}),

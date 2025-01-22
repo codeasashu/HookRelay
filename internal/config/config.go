@@ -25,6 +25,7 @@ scan_duration = 100
 min_threads = 1
 max_threads = -1
 result_handlers_threads = 10
+queue_size = 200000  # distributed b/w worker and result queue
 
 [metrics]
 enabled = true
@@ -54,6 +55,7 @@ type WorkerConfig struct {
 	MinThreads           int `mapstructure:"min_threads"`
 	MaxThreads           int `mapstructure:"max_threads"`
 	ResultHandlerThreads int `mapstructure:"result_handlers_threads"`
+	QueueSize            int `mapstructure:"queue_size"`
 }
 
 type MetricsConfig struct {
