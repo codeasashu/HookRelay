@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/codeasashu/HookRelay/internal/api"
-	"github.com/codeasashu/HookRelay/internal/benchmark"
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
+	"github.com/codeasashu/HookRelay/internal/logger"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
 
@@ -21,12 +22,16 @@ var g errgroup.Group
 
 func main() {
 	cli.Execute()
+	slog.SetDefault(logger.New())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
+	// Init once
+	m := metrics.GetDPInstance()
+	go m.StartGoroutineMonitor(ctx)
+
 	disp := dispatcher.NewDispatcher()
-	lat := benchmark.NewLatencyBench(disp)
 	disp.Start()
 
 	apiServer := api.InitApiServer()
@@ -34,33 +39,30 @@ func main() {
 	subscription.Init()
 	subscription.AddRoutes(apiServer)
 
+	// Add prometheus api
+	metrics.AddRoutes(apiServer)
+
 	// Finally start api server
 	g.Go(apiServer.Start)
-	// dispatcherPool := worker.NewWorkerPool(worker.MaxDispatchWorkers, worker.MaxQueueSize)
-	// dispatcherPool.Start(worker.DispatchWorker)
-
-	// go worker.DynamicWorkerScaler(dispatcherPool, 1*time.Second)
 
 	httpListenerServer := listener.NewHTTPListener(":8082", disp)
 	g.Go(httpListenerServer.StartAndReceive)
 
 	go func() {
 		<-ctx.Done()
-		log.Println("shutting down...")
 
 		// Trigger shutdown handlers
+		slog.Info("shutting down...")
 		apiServer.Shutdown(ctx)
 		httpListenerServer.Shutdown(ctx)
 
-		// disp.Stop()
-		// Cancel all goroutines by stopping the errgroup context
 		stop()
 	}()
 
 	if err := g.Wait(); err != nil {
 		disp.Stop()
-		lat.PrintSummary()
-		log.Fatal(err)
+		slog.Error("Error while waiting for goroutines to complete.", slog.Any("error", err))
+		os.Exit(0)
 	}
 
 	// <-ctx.Done()

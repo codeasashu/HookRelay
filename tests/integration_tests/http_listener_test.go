@@ -3,7 +3,6 @@ package integrationtests
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/target"
@@ -146,7 +145,6 @@ func BenchmarkSendEvent(b *testing.B) {
 			Payload: map[string]string{
 				"a": "b",
 			},
-			LatencyTimestamps: make(map[string]time.Time),
 		}
 		resp, err := ec.SendEvent(ev)
 		if err != nil {

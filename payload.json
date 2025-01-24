@@ -1,0 +1,11 @@
+{
+  "owner_id": "owner789",
+  "event_type": "webhook.abc",
+  "target": {
+    "type": "http",
+    "http_details": {
+      "url": "https://httpbin.org/post",
+      "method": "POST"
+    }
+  }
+}

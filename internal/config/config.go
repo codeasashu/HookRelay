@@ -22,8 +22,17 @@ port = 8081
 
 [worker]
 scan_duration = 100
-min_threads = 50
-max_threads = 100
+min_threads = 1
+max_threads = -1
+result_handlers_threads = 10
+queue_size = 200000  # distributed b/w worker and result queue
+
+[metrics]
+enabled = true
+
+[logging]
+log_level = "info"  # possible values: "debug", "info", "warn", "error" (default=info)
+log_format = "json"  # possible values: "json", "console" (default=json)
 `
 )
 
@@ -42,15 +51,28 @@ type ApiConfig struct {
 }
 
 type WorkerConfig struct {
-	ScanDuration int `mapstructure:"scan_duration"` // in milliseconds
-	MinThreads   int `mapstructure:"min_threads"`
-	MaxThreads   int `mapstructure:"max_threads"`
+	ScanDuration         int `mapstructure:"scan_duration"` // in milliseconds
+	MinThreads           int `mapstructure:"min_threads"`
+	MaxThreads           int `mapstructure:"max_threads"`
+	ResultHandlerThreads int `mapstructure:"result_handlers_threads"`
+	QueueSize            int `mapstructure:"queue_size"`
+}
+
+type MetricsConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
+type LoggingConfig struct {
+	LogLevel  string `mapstructure:"log_level"`
+	LogFormat string `mapstructure:"log_format"`
 }
 
 type Config struct {
 	Listener ListenerConfig `mapstructure:"listener"`
 	Api      ApiConfig      `mapstructure:"api"`
 	Worker   WorkerConfig   `mapstructure:"worker"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	Logging  LoggingConfig  `mapstructure:"logging"`
 }
 
 var HRConfig Config
