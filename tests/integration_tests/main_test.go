@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 	// cli.Execute()
 
 	// Load custom Config
-	_, err := config.LoadConfig("test_config.toml")
+	_, err := config.LoadConfig("test_config.toml", false)
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}

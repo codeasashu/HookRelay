@@ -1,14 +1,20 @@
 package metrics
 
 import (
+	"net/http"
+
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func AddRoutes(server *api.ApiServer) {
+func GetHandler() http.Handler {
 	pr := Reg()
-	handler := promhttp.HandlerFor(pr, promhttp.HandlerOpts{Registry: pr})
+	return promhttp.HandlerFor(pr, promhttp.HandlerOpts{Registry: pr})
+}
+
+func AddRoutes(server *api.ApiServer) {
+	handler := GetHandler()
 	{
 
 		v2 := server.Router.Group("/metrics")

@@ -159,7 +159,6 @@ func (w *Worker) Stop() {
 
 // processJob simulates the actual job processing (e.g., an HTTP call).
 func processJob(job *Job) error {
-	slog.Info("processing job", "job_id", job.ID, "target_url", job.Subscription.Target.HTTPDetails.URL)
 	// time.Sleep(3 * time.Second) // Simulate processing time.
 	// return nil
 	return job.Subscription.Target.ProcessTarget(job.Event.Payload)

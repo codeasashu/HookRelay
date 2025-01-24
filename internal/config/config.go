@@ -29,10 +29,15 @@ queue_size = 200000  # distributed b/w worker and result queue
 
 [metrics]
 enabled = true
+worker_addr = ":2112"  # worker metrics address
 
 [logging]
 log_level = "info"  # possible values: "debug", "info", "warn", "error" (default=info)
 log_format = "json"  # possible values: "json", "console" (default=json)
+
+[redis_queue]
+addr = "127.0.0.1:6379"
+db = 0
 `
 )
 
@@ -58,8 +63,16 @@ type WorkerConfig struct {
 	QueueSize            int `mapstructure:"queue_size"`
 }
 
+type RedisQueueConfig struct {
+	Addr     string `mapstructure:"addr"` // in milliseconds
+	Db       int    `mapstructure:"db"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
 type MetricsConfig struct {
-	Enabled bool `mapstructure:"enabled"`
+	Enabled    bool   `mapstructure:"enabled"`
+	WorkerAddr string `mapstructure:"worker_addr"`
 }
 
 type LoggingConfig struct {
@@ -68,16 +81,19 @@ type LoggingConfig struct {
 }
 
 type Config struct {
-	Listener ListenerConfig `mapstructure:"listener"`
-	Api      ApiConfig      `mapstructure:"api"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
+	Listener   ListenerConfig   `mapstructure:"listener"`
+	Api        ApiConfig        `mapstructure:"api"`
+	Worker     WorkerConfig     `mapstructure:"worker"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Logging    LoggingConfig    `mapstructure:"logging"`
+	RedisQueue RedisQueueConfig `mapstructure:"redis_queue"`
+
+	IsWorker bool
 }
 
 var HRConfig Config
 
-func LoadConfig(customConfigPath string) (*Config, error) {
+func LoadConfig(customConfigPath string, isWorker bool) (*Config, error) {
 	v := viper.New()
 
 	// Set default configuration
@@ -108,6 +124,11 @@ func LoadConfig(customConfigPath string) (*Config, error) {
 	if err := v.Unmarshal(&HRConfig); err != nil {
 		log.Printf("error unmarshaling configuration: %s", err)
 		return nil, errors.New("error unmarshaling configuration")
+	}
+
+	HRConfig.IsWorker = false
+	if isWorker {
+		HRConfig.IsWorker = true
 	}
 
 	return &HRConfig, nil
