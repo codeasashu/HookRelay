@@ -73,6 +73,7 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 			m.GoroutineCount,
 			m.WorkerQueueSize,
 			m.WorkerThreadsTotal,
+			m.PreFlightLatency,
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 			collectors.NewGoCollector(),
@@ -93,7 +94,6 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 			m.IngestSuccessTotal,
 			m.EventDispatchLatency,
 			m.EventDeliveryLatency,
-			m.PreFlightLatency,
 			qmetrics.NewQueueMetricsCollector(inspector),
 		)
 	}
