@@ -42,13 +42,13 @@ func StartMetricsServer() *http.Server {
 	return metricsSrv
 }
 
-func StartWorkerServer(sigs chan os.Signal) *asynq.Server {
+func StartQueueWorker(sigs chan os.Signal) *asynq.Server {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
-			Addr:     config.HRConfig.RedisQueue.Addr,
-			DB:       config.HRConfig.RedisQueue.Db,
-			Password: config.HRConfig.RedisQueue.Password,
-			Username: config.HRConfig.RedisQueue.Username,
+			Addr:     config.HRConfig.QueueWorker.Addr,
+			DB:       config.HRConfig.QueueWorker.Db,
+			Password: config.HRConfig.QueueWorker.Password,
+			Username: config.HRConfig.QueueWorker.Username,
 		},
 		asynq.Config{
 			Concurrency: config.HRConfig.Worker.MaxThreads,
@@ -60,7 +60,7 @@ func StartWorkerServer(sigs chan os.Signal) *asynq.Server {
 
 	mux := asynq.NewServeMux()
 	mux.Use(metricsWrapper())
-	mux.HandleFunc(worker.TypeEventDelivery, worker.HandleWorkerJob)
+	mux.HandleFunc(worker.TypeEventDelivery, worker.HandleQueueJob)
 
 	// Start worker server.
 	if err := srv.Start(mux); err != nil {

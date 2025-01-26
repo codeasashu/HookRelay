@@ -82,10 +82,10 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 
 	if config.HRConfig.IsWorker {
 		inspector := asynq.NewInspector(asynq.RedisClientOpt{
-			Addr:     config.HRConfig.RedisQueue.Addr,
-			DB:       config.HRConfig.RedisQueue.Db,
-			Password: config.HRConfig.RedisQueue.Password,
-			Username: config.HRConfig.RedisQueue.Username,
+			Addr:     config.HRConfig.QueueWorker.Addr,
+			DB:       config.HRConfig.QueueWorker.Db,
+			Password: config.HRConfig.QueueWorker.Password,
+			Username: config.HRConfig.QueueWorker.Username,
 		})
 
 		pr.MustRegister(

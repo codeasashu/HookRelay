@@ -8,7 +8,6 @@ import (
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/worker"
-	"github.com/hibiken/asynq"
 
 	"github.com/codeasashu/HookRelay/pkg/subscription"
 )
@@ -21,22 +20,36 @@ type Dispatcher struct {
 	JobResults map[string][]*worker.JobResult
 	eventJobs  map[string]int
 	totalJobs  int
-
-	redisClient *asynq.Client
 }
 
 func NewDispatcher() *Dispatcher {
 	m = metrics.GetDPInstance()
-	asyncClient := worker.NewRedisClient()
 	// wrk := worker.NewWorker()
 	return &Dispatcher{
-		lock:        &sync.RWMutex{},
-		Workers:     []*worker.Worker{},
-		JobResults:  make(map[string][]*worker.JobResult),
-		eventJobs:   make(map[string]int),
-		totalJobs:   0,
-		redisClient: asyncClient,
+		lock:       &sync.RWMutex{},
+		Workers:    []*worker.Worker{},
+		JobResults: make(map[string][]*worker.JobResult),
+		eventJobs:  make(map[string]int),
+		totalJobs:  0,
 	}
+}
+
+func (d *Dispatcher) AddQueueWorker() {
+	wrk := worker.NewQueueWorker()
+	d.Workers = append(d.Workers, wrk)
+}
+
+func (d *Dispatcher) AddPubsubWorker() {
+	wrk := worker.NewPubsubWorker()
+	d.Workers = append(d.Workers, wrk)
+}
+
+func (d *Dispatcher) getAvailableWorker() *worker.Worker {
+	// @TODO: Make better algo
+	if len(d.Workers) > 0 {
+		return d.Workers[0]
+	}
+	return nil
 }
 
 //	func (d *Dispatcher) AddWorker(worker *worker.Worker) {
@@ -112,17 +125,12 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 				Event:        &event,
 				Subscription: sub,
 			}
-			t, err := worker.NewWorkerJob(job)
+			wrk := d.getAvailableWorker()
+			err := wrk.DispatchJob(job)
 			if err != nil {
 				slog.Error("error creating redis task", "err", err)
 				continue
 			}
-			info, err := d.redisClient.Enqueue(t, asynq.Queue("hookrelay"))
-			if err != nil {
-				slog.Error("could not enqueue task", "err", err)
-				continue
-			}
-			slog.Info("enqueued task", "task_id", info.ID, "queue", info.Queue)
 			// wrk := d.getAvailableWorker()
 			// slog.Info("scheduled job", "job_id", job.ID, "event_type", event.EventType, "worker_id", wrk.ID)
 			// m.RecordDispatchLatency(&event)

@@ -25,14 +25,14 @@ func TestMain(m *testing.M) {
 	// cli.Execute()
 
 	// Load custom Config
-	_, err := config.LoadConfig("test_config.toml", false)
+	_, err := config.LoadConfig("test_config.toml", "")
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
 	disp := dispatcher.NewDispatcher()
 	// benchmark.NewLatencyBench(disp)
-	disp.Start()
+	// disp.Start()
 	ctx, cancel := context.WithCancel(context.Background())
 	s := RunHTTPListener(ctx, &wg, disp)
 
@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 
 	cancel()
 	s.Shutdown(ctx)
-	disp.Stop()
+	// disp.Stop()
 
 	// wg.Wait()
 	if exitCode != 0 {

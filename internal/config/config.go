@@ -8,6 +8,13 @@ import (
 	"github.com/spf13/viper"
 )
 
+type WorkerType string
+
+const (
+	QueueWorker  WorkerType = "queue"
+	PubSubWorker WorkerType = "pubsub"
+)
+
 const (
 	DefaultConfigName     = "hookrelay"
 	DefaultConfigDir      = "."
@@ -25,7 +32,7 @@ scan_duration = 100
 min_threads = 1
 max_threads = -1
 result_handlers_threads = 10
-queue_size = 200000  # distributed b/w worker and result queue
+queue_size = 200000  # divided equally b/w worker queue and result queue
 
 [metrics]
 enabled = true
@@ -35,9 +42,15 @@ worker_addr = ":2112"  # worker metrics address
 log_level = "info"  # possible values: "debug", "info", "warn", "error" (default=info)
 log_format = "json"  # possible values: "json", "console" (default=json)
 
-[redis_queue]
+[queue_worker]
 addr = "127.0.0.1:6379"
 db = 0
+
+[pubsub_worker]
+addr = "127.0.0.1:6379"
+db = 0
+channel = "hookrelay:pubsub"
+threads = 100
 `
 )
 
@@ -63,11 +76,21 @@ type WorkerConfig struct {
 	QueueSize            int `mapstructure:"queue_size"`
 }
 
-type RedisQueueConfig struct {
+type QueueWorkerConfig struct {
 	Addr     string `mapstructure:"addr"` // in milliseconds
 	Db       int    `mapstructure:"db"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+}
+
+type PubsubWorkerConfig struct {
+	Addr      string `mapstructure:"addr"` // in milliseconds
+	Db        int    `mapstructure:"db"`
+	Username  string `mapstructure:"username"`
+	Password  string `mapstructure:"password"`
+	Channel   string `mapstructure:"channel"`
+	Threads   int    `mapstructure:"threads"`
+	QueueSize int    `mapstructure:"queue_size"`
 }
 
 type MetricsConfig struct {
@@ -81,19 +104,29 @@ type LoggingConfig struct {
 }
 
 type Config struct {
-	Listener   ListenerConfig   `mapstructure:"listener"`
-	Api        ApiConfig        `mapstructure:"api"`
-	Worker     WorkerConfig     `mapstructure:"worker"`
-	Metrics    MetricsConfig    `mapstructure:"metrics"`
-	Logging    LoggingConfig    `mapstructure:"logging"`
-	RedisQueue RedisQueueConfig `mapstructure:"redis_queue"`
+	Listener     ListenerConfig     `mapstructure:"listener"`
+	Api          ApiConfig          `mapstructure:"api"`
+	Worker       WorkerConfig       `mapstructure:"worker"`
+	Metrics      MetricsConfig      `mapstructure:"metrics"`
+	Logging      LoggingConfig      `mapstructure:"logging"`
+	QueueWorker  QueueWorkerConfig  `mapstructure:"queue_worker"`
+	PubsubWorker PubsubWorkerConfig `mapstructure:"pubsub_worker"`
 
-	IsWorker bool
+	IsWorker   bool
+	WorkerType WorkerType
 }
 
 var HRConfig Config
 
-func LoadConfig(customConfigPath string, isWorker bool) (*Config, error) {
+func (c *Config) IsQueueWorker() bool {
+	return c.WorkerType == QueueWorker
+}
+
+func (c *Config) IsPubsubWorker() bool {
+	return c.WorkerType == PubSubWorker
+}
+
+func LoadConfig(customConfigPath string, workerType string) (*Config, error) {
 	v := viper.New()
 
 	// Set default configuration
@@ -127,8 +160,9 @@ func LoadConfig(customConfigPath string, isWorker bool) (*Config, error) {
 	}
 
 	HRConfig.IsWorker = false
-	if isWorker {
+	if workerType != "" {
 		HRConfig.IsWorker = true
+		HRConfig.WorkerType = WorkerType(workerType)
 	}
 
 	return &HRConfig, nil

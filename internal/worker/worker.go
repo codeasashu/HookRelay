@@ -33,6 +33,11 @@ type WorkerPool struct {
 	mutex   sync.Mutex
 }
 
+type WorkerClient interface {
+	SendJob(job *Job) error
+	ReceiveJob(chan<- *Job)
+}
+
 type Worker struct {
 	ID            string
 	JobQueue      chan *Job
@@ -42,6 +47,7 @@ type Worker struct {
 	activeThreads int32          // Active thread count (atomic counter)
 	StopChan      chan struct{}  // Signal for stopping the worker
 	wg            sync.WaitGroup // WaitGroup for graceful shutdown
+	client        WorkerClient
 }
 
 func NewWorker() *Worker {
@@ -61,6 +67,34 @@ func NewWorker() *Worker {
 		MinThreads:  minThreads,
 		StopChan:    make(chan struct{}),
 	}
+}
+
+func (w *Worker) ReceiveJob(onChan chan *Job) {
+	if w.client != nil {
+		w.client.ReceiveJob(onChan)
+	}
+}
+
+func (w *Worker) DispatchJob(job *Job) error {
+	if w.client != nil {
+		w.client.SendJob(job)
+	}
+
+	// if w.pubsubClient != nil {
+	// 	t, err := NewQueueJob(job)
+	// 	if err != nil {
+	// 		slog.Error("error creating redis task", "err", err)
+	// 		return err
+	// 	}
+	// 	info, err := w.queueClient.Enqueue(t, asynq.Queue("hookrelay"))
+	// 	if err != nil {
+	// 		slog.Error("could not enqueue task", "err", err)
+	// 		return err
+	// 	}
+	// 	slog.Info("enqueued task", "task_id", info.ID, "queue", info.Queue)
+	// 	return nil
+	// }
+	return nil
 }
 
 func (w *Worker) Start() {
