@@ -37,7 +37,6 @@ func HandleWorkerJob(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
 	m.RecordDispatchLatency(j.Event)
-	m.RecordPreFlightLatency(j.Event)
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	err := processJob(&j)
 	m.IncrementIngestConsumedTotal(j.Event)
