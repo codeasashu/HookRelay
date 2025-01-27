@@ -64,7 +64,12 @@ func startServerMode() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
+	// Always start a local worker per server
+	wrk := worker.StartLocalWorker()
+
 	disp := dispatcher.NewDispatcher()
+	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
+	// disp.AddPubsubWorker()
 	// disp.Start()
 
 	apiServer := api.InitApiServer()

@@ -44,6 +44,10 @@ func (d *Dispatcher) AddPubsubWorker() {
 	d.Workers = append(d.Workers, wrk)
 }
 
+func (d *Dispatcher) AddLocalWorker(wrk *worker.Worker) {
+	d.Workers = append(d.Workers, wrk)
+}
+
 func (d *Dispatcher) getAvailableWorker() *worker.Worker {
 	// @TODO: Make better algo
 	if len(d.Workers) > 0 {

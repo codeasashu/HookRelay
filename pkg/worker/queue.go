@@ -51,7 +51,7 @@ func StartQueueWorker(sigs chan os.Signal) *asynq.Server {
 			Username: config.HRConfig.QueueWorker.Username,
 		},
 		asynq.Config{
-			Concurrency: config.HRConfig.Worker.MaxThreads,
+			Concurrency: config.HRConfig.QueueWorker.Concurrency,
 			Queues: map[string]int{
 				"hookrelay": 1,
 			},

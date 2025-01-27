@@ -38,8 +38,7 @@ func NewQueueWorker() *Worker {
 	})
 
 	return &Worker{
-		ID:       ulid.Make().String(),
-		StopChan: make(chan struct{}),
+		ID: ulid.Make().String(),
 		client: &QueueClient{
 			ctx:    context.Background(),
 			client: client,

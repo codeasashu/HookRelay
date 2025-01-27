@@ -26,8 +26,7 @@ func NewPubsubWorker() *Worker {
 		Username: config.HRConfig.PubsubWorker.Username,
 	})
 	return &Worker{
-		ID:       ulid.Make().String(),
-		StopChan: make(chan struct{}),
+		ID: ulid.Make().String(),
 		client: &PubSubClient{
 			client:  client,
 			ctx:     context.Background(),
