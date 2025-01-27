@@ -12,6 +12,7 @@ func StartPubsubWorker() {
 	jobChannel := make(chan *worker.Job, config.HRConfig.PubsubWorker.QueueSize) // Buffered channel for queuing jobs
 	w := worker.NewPubsubWorker()
 	// Start a pool of goroutines to process jobs
+	slog.Info("staring pool of child workers", "children", config.HRConfig.PubsubWorker.Threads)
 	for i := 0; i < config.HRConfig.PubsubWorker.Threads; i++ {
 		go worker.ProcessJobFromSubscribedChan(jobChannel)
 	}

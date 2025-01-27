@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/oklog/ulid/v2"
@@ -45,11 +46,13 @@ func (c *PubSubClient) SendJob(job *Job) error {
 }
 
 func (c *PubSubClient) ReceiveJob(jobChannel chan<- *Job) {
-	// jobChannel := make(chan *Job, config.HRConfig.PubsubWorker.QueueSize) // Buffered channel for queuing jobs
 	pubsub := c.client.Subscribe(c.ctx, config.HRConfig.PubsubWorker.Channel)
+	slog.Info("subscribed to redis, listening for messages....")
 	for msg := range pubsub.Channel() {
+		slog.Info("got message, processing ...")
 		j, err := parseJobFromSubscribedChan(msg)
 		if err != nil {
+			slog.Error("error processing message", "err", err)
 			continue
 		}
 		jobChannel <- j
@@ -80,6 +83,7 @@ func parseJobFromSubscribedChan(msg *redis.Message) (*Job, error) {
 
 func ProcessJobFromSubscribedChan(jobChan <-chan *Job) {
 	for job := range jobChan {
+		slog.Info("processing job", "job", job.ID)
 		processJob(job)
 	}
 }

@@ -79,21 +79,6 @@ func (w *Worker) DispatchJob(job *Job) error {
 	if w.client != nil {
 		w.client.SendJob(job)
 	}
-
-	// if w.pubsubClient != nil {
-	// 	t, err := NewQueueJob(job)
-	// 	if err != nil {
-	// 		slog.Error("error creating redis task", "err", err)
-	// 		return err
-	// 	}
-	// 	info, err := w.queueClient.Enqueue(t, asynq.Queue("hookrelay"))
-	// 	if err != nil {
-	// 		slog.Error("could not enqueue task", "err", err)
-	// 		return err
-	// 	}
-	// 	slog.Info("enqueued task", "task_id", info.ID, "queue", info.Queue)
-	// 	return nil
-	// }
 	return nil
 }
 
