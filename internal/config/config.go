@@ -8,6 +8,13 @@ import (
 	"github.com/spf13/viper"
 )
 
+type WorkerType string
+
+const (
+	QueueWorker  WorkerType = "queue"
+	PubSubWorker WorkerType = "pubsub"
+)
+
 const (
 	DefaultConfigName     = "hookrelay"
 	DefaultConfigDir      = "."
@@ -20,13 +27,6 @@ http.workers = 4
 [api]
 port = 8081
 
-[worker]
-scan_duration = 100
-min_threads = 1
-max_threads = -1
-result_handlers_threads = 10
-queue_size = 200000  # distributed b/w worker and result queue
-
 [metrics]
 enabled = true
 worker_addr = ":2112"  # worker metrics address
@@ -35,9 +35,23 @@ worker_addr = ":2112"  # worker metrics address
 log_level = "info"  # possible values: "debug", "info", "warn", "error" (default=info)
 log_format = "json"  # possible values: "json", "console" (default=json)
 
-[redis_queue]
+[local_worker]
+scan_duration = 100
+min_threads = 1
+max_threads = -1
+result_handlers_threads = 10
+queue_size = 200000  # divided equally b/w worker queue and result queue
+
+[queue_worker]
 addr = "127.0.0.1:6379"
 db = 0
+concurrency = 10
+
+[pubsub_worker]
+addr = "127.0.0.1:6379"
+db = 0
+channel = "hookrelay:pubsub"
+threads = 100
 `
 )
 
@@ -55,7 +69,7 @@ type ApiConfig struct {
 	Port int `mapstructure:"port"`
 }
 
-type WorkerConfig struct {
+type LocalWorkerConfig struct {
 	ScanDuration         int `mapstructure:"scan_duration"` // in milliseconds
 	MinThreads           int `mapstructure:"min_threads"`
 	MaxThreads           int `mapstructure:"max_threads"`
@@ -63,11 +77,22 @@ type WorkerConfig struct {
 	QueueSize            int `mapstructure:"queue_size"`
 }
 
-type RedisQueueConfig struct {
-	Addr     string `mapstructure:"addr"` // in milliseconds
-	Db       int    `mapstructure:"db"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+type QueueWorkerConfig struct {
+	Addr        string `mapstructure:"addr"` // in milliseconds
+	Db          int    `mapstructure:"db"`
+	Username    string `mapstructure:"username"`
+	Password    string `mapstructure:"password"`
+	Concurrency int    `mapstructure:"concurrency"`
+}
+
+type PubsubWorkerConfig struct {
+	Addr      string `mapstructure:"addr"` // in milliseconds
+	Db        int    `mapstructure:"db"`
+	Username  string `mapstructure:"username"`
+	Password  string `mapstructure:"password"`
+	Channel   string `mapstructure:"channel"`
+	Threads   int    `mapstructure:"threads"`
+	QueueSize int    `mapstructure:"queue_size"`
 }
 
 type MetricsConfig struct {
@@ -81,19 +106,35 @@ type LoggingConfig struct {
 }
 
 type Config struct {
-	Listener   ListenerConfig   `mapstructure:"listener"`
-	Api        ApiConfig        `mapstructure:"api"`
-	Worker     WorkerConfig     `mapstructure:"worker"`
-	Metrics    MetricsConfig    `mapstructure:"metrics"`
-	Logging    LoggingConfig    `mapstructure:"logging"`
-	RedisQueue RedisQueueConfig `mapstructure:"redis_queue"`
+	Listener     ListenerConfig     `mapstructure:"listener"`
+	Api          ApiConfig          `mapstructure:"api"`
+	Metrics      MetricsConfig      `mapstructure:"metrics"`
+	Logging      LoggingConfig      `mapstructure:"logging"`
+	LocalWorker  LocalWorkerConfig  `mapstructure:"local_worker"`
+	QueueWorker  QueueWorkerConfig  `mapstructure:"queue_worker"`
+	PubsubWorker PubsubWorkerConfig `mapstructure:"pubsub_worker"`
 
-	IsWorker bool
+	IsWorker   bool
+	WorkerType WorkerType
 }
 
 var HRConfig Config
 
-func LoadConfig(customConfigPath string, isWorker bool) (*Config, error) {
+func (c *Config) IsQueueWorker() bool {
+	return c.WorkerType == QueueWorker
+}
+
+func (c *Config) IsPubsubWorker() bool {
+	return c.WorkerType == PubSubWorker
+}
+
+func (c *Config) IsLocalWorker() bool {
+	// A local worker is always starts with main server
+	// However, it is never present in pubsub/queue worker type
+	return !c.IsWorker
+}
+
+func LoadConfig(customConfigPath string, workerType string) (*Config, error) {
 	v := viper.New()
 
 	// Set default configuration
@@ -127,8 +168,9 @@ func LoadConfig(customConfigPath string, isWorker bool) (*Config, error) {
 	}
 
 	HRConfig.IsWorker = false
-	if isWorker {
+	if workerType != "" {
 		HRConfig.IsWorker = true
+		HRConfig.WorkerType = WorkerType(workerType)
 	}
 
 	return &HRConfig, nil

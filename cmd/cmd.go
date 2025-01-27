@@ -31,19 +31,20 @@ func main() {
 	// Init once
 	metrics.GetDPInstance()
 
-	if config.HRConfig.IsWorker {
-		slog.Info("staring in worker mode")
-		startWorkerMode()
+	if config.HRConfig.IsQueueWorker() {
+		startWorkerQueueMode()
+	} else if config.HRConfig.IsPubsubWorker() {
+		worker.StartPubsubWorker()
 	} else {
-		slog.Info("staring in server mode")
 		startServerMode()
 	}
 }
 
-func startWorkerMode() {
+func startWorkerQueueMode() {
+	slog.Info("staring queue worker")
 	sigs := make(chan os.Signal, 1)
 	metricsSrv := worker.StartMetricsServer()
-	srv := worker.StartWorkerServer(sigs)
+	srv := worker.StartQueueWorker(sigs)
 
 	// Wait for termination signal.
 	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT)
@@ -59,10 +60,16 @@ func startWorkerMode() {
 }
 
 func startServerMode() {
+	slog.Info("Staring HookRelay...")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
+	// Always start a local worker per server
+	wrk := worker.StartLocalWorker()
+
 	disp := dispatcher.NewDispatcher()
+	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
+	// disp.AddPubsubWorker()
 	// disp.Start()
 
 	apiServer := api.InitApiServer()

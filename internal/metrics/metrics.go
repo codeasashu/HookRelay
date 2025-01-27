@@ -70,9 +70,6 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 			m.IngestLatency,
 			m.TotalSubscriptions,
 			m.FanoutSize,
-			m.GoroutineCount,
-			m.WorkerQueueSize,
-			m.WorkerThreadsTotal,
 			m.PreFlightLatency,
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -80,12 +77,24 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 		)
 	}
 
-	if config.HRConfig.IsWorker {
+	if config.HRConfig.IsLocalWorker() && m.IsEnabled {
+		pr.MustRegister(
+			m.IngestConsumedTotal,
+			m.IngestErrorsTotal,
+			m.IngestSuccessTotal,
+			m.EventDispatchLatency,
+			m.EventDeliveryLatency,
+			m.WorkerQueueSize,
+			m.WorkerThreadsTotal,
+		)
+	}
+
+	if config.HRConfig.IsQueueWorker() && m.IsEnabled {
 		inspector := asynq.NewInspector(asynq.RedisClientOpt{
-			Addr:     config.HRConfig.RedisQueue.Addr,
-			DB:       config.HRConfig.RedisQueue.Db,
-			Password: config.HRConfig.RedisQueue.Password,
-			Username: config.HRConfig.RedisQueue.Username,
+			Addr:     config.HRConfig.QueueWorker.Addr,
+			DB:       config.HRConfig.QueueWorker.Db,
+			Password: config.HRConfig.QueueWorker.Password,
+			Username: config.HRConfig.QueueWorker.Username,
 		})
 
 		pr.MustRegister(
