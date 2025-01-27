@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -11,6 +10,16 @@ import (
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/hibiken/asynq"
+	qmetrics "github.com/hibiken/asynq/x/metrics"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+)
+
+type key string
+
+const (
+	MetricsContextKey key = "_minstance" // To get isntance by context key, in workers
 )
 
 var (
@@ -58,18 +67,43 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 	if m.IsEnabled {
 		pr.MustRegister(
 			m.IngestTotal,
+			m.IngestLatency,
+			m.TotalSubscriptions,
+			m.FanoutSize,
+			m.PreFlightLatency,
+			// Add the standard process and go metrics to the registry
+			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+			collectors.NewGoCollector(),
+		)
+	}
+
+	if config.HRConfig.IsLocalWorker() && m.IsEnabled {
+		pr.MustRegister(
 			m.IngestConsumedTotal,
 			m.IngestErrorsTotal,
 			m.IngestSuccessTotal,
-			m.IngestLatency,
-			m.EventDeliveryLatency,
 			m.EventDispatchLatency,
-			m.PreFlightLatency,
-			m.TotalSubscriptions,
-			m.FanoutSize,
-			m.GoroutineCount,
+			m.EventDeliveryLatency,
 			m.WorkerQueueSize,
 			m.WorkerThreadsTotal,
+		)
+	}
+
+	if config.HRConfig.IsQueueWorker() && m.IsEnabled {
+		inspector := asynq.NewInspector(asynq.RedisClientOpt{
+			Addr:     config.HRConfig.QueueWorker.Addr,
+			DB:       config.HRConfig.QueueWorker.Db,
+			Password: config.HRConfig.QueueWorker.Password,
+			Username: config.HRConfig.QueueWorker.Username,
+		})
+
+		pr.MustRegister(
+			m.IngestConsumedTotal,
+			m.IngestErrorsTotal,
+			m.IngestSuccessTotal,
+			m.EventDispatchLatency,
+			m.EventDeliveryLatency,
+			qmetrics.NewQueueMetricsCollector(inspector),
 		)
 	}
 	return m
@@ -323,19 +357,4 @@ func Reg() *prometheus.Registry {
 	})
 
 	return reg
-}
-
-func (m *Metrics) StartGoroutineMonitor(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Update total goroutines
-			m.UpdateGoroutineCount("total")
-		case <-ctx.Done():
-			return
-		}
-	}
 }

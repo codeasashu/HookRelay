@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/worker"
@@ -25,68 +24,89 @@ type Dispatcher struct {
 
 func NewDispatcher() *Dispatcher {
 	m = metrics.GetDPInstance()
-	wrk := worker.NewWorker()
+	// wrk := worker.NewWorker()
 	return &Dispatcher{
 		lock:       &sync.RWMutex{},
-		Workers:    []*worker.Worker{wrk},
+		Workers:    []*worker.Worker{},
 		JobResults: make(map[string][]*worker.JobResult),
 		eventJobs:  make(map[string]int),
 		totalJobs:  0,
 	}
 }
 
-func (d *Dispatcher) AddWorker(worker *worker.Worker) {
-	d.Workers = append(d.Workers, worker)
+func (d *Dispatcher) AddQueueWorker() {
+	wrk := worker.NewQueueWorker()
+	d.Workers = append(d.Workers, wrk)
 }
 
-func (d *Dispatcher) Start() {
-	// Start workers
-	for _, wrk := range d.Workers {
-		wrk.Start()
-	}
-
-	// Listen for results
-	for _, wrk := range d.Workers {
-		for i := 0; i < config.HRConfig.Worker.ResultHandlerThreads; i++ {
-			go d.listenResults(wrk)
-		}
-	}
+func (d *Dispatcher) AddPubsubWorker() {
+	wrk := worker.NewPubsubWorker()
+	d.Workers = append(d.Workers, wrk)
 }
 
-func (d *Dispatcher) listenResults(wrk *worker.Worker) {
-	for jobResult := range wrk.ResultQueue {
-		m.IncrementIngestConsumedTotal(jobResult.Job.Event)
-		if jobResult.Status == "success" {
-			m.IncrementIngestSuccessTotal(jobResult.Job.Event)
-		} else {
-			m.IncrementIngestErrorsTotal(jobResult.Job.Event)
-		}
-		d.lock.Lock()
-		d.totalJobs++
-		slog.Info("job completed", "job_id", jobResult.Job.ID, "status", jobResult.Status)
-		if found := d.JobResults[jobResult.Job.Event.UID]; found != nil {
-			d.JobResults[jobResult.Job.Event.UID] = append(d.JobResults[jobResult.Job.Event.UID], jobResult)
-		} else {
-			d.JobResults[jobResult.Job.Event.UID] = []*worker.JobResult{jobResult}
-		}
-		expectedJobs := d.eventJobs[jobResult.Job.Event.UID]
-		actualJobs := len(d.JobResults[jobResult.Job.Event.UID])
-		if expectedJobs > 0 && (expectedJobs == actualJobs) {
-			m.RecordEndToEndLatency(jobResult.Job.Event)
-			slog.Info("all jobs completed", "event_id", jobResult.Job.Event.UID, "completed_jobs", actualJobs)
-		}
-		d.lock.Unlock()
-	}
+func (d *Dispatcher) AddLocalWorker(wrk *worker.Worker) {
+	d.Workers = append(d.Workers, wrk)
 }
 
 func (d *Dispatcher) getAvailableWorker() *worker.Worker {
-	return d.Workers[0]
+	// @TODO: Make better algo
+	if len(d.Workers) > 0 {
+		return d.Workers[0]
+	}
+	return nil
 }
 
-func (d *Dispatcher) GetJobsByEventUID(eventUID string) []*worker.JobResult {
-	return d.JobResults[eventUID]
-}
-
+//	func (d *Dispatcher) AddWorker(worker *worker.Worker) {
+//		d.Workers = append(d.Workers, worker)
+//	}
+//
+//	func (d *Dispatcher) Start() {
+//		// Start workers
+//		for _, wrk := range d.Workers {
+//			wrk.Start()
+//		}
+//
+//		// Listen for results
+//		for _, wrk := range d.Workers {
+//			for i := 0; i < config.HRConfig.Worker.ResultHandlerThreads; i++ {
+//				go d.listenResults(wrk)
+//			}
+//		}
+//	}
+//
+//	func (d *Dispatcher) listenResults(wrk *worker.Worker) {
+//		for jobResult := range wrk.ResultQueue {
+//			m.IncrementIngestConsumedTotal(jobResult.Job.Event)
+//			if jobResult.Status == "success" {
+//				m.IncrementIngestSuccessTotal(jobResult.Job.Event)
+//			} else {
+//				m.IncrementIngestErrorsTotal(jobResult.Job.Event)
+//			}
+//			d.lock.Lock()
+//			d.totalJobs++
+//			slog.Info("job completed", "job_id", jobResult.Job.ID, "status", jobResult.Status)
+//			if found := d.JobResults[jobResult.Job.Event.UID]; found != nil {
+//				d.JobResults[jobResult.Job.Event.UID] = append(d.JobResults[jobResult.Job.Event.UID], jobResult)
+//			} else {
+//				d.JobResults[jobResult.Job.Event.UID] = []*worker.JobResult{jobResult}
+//			}
+//			expectedJobs := d.eventJobs[jobResult.Job.Event.UID]
+//			actualJobs := len(d.JobResults[jobResult.Job.Event.UID])
+//			if expectedJobs > 0 && (expectedJobs == actualJobs) {
+//				m.RecordEndToEndLatency(jobResult.Job.Event)
+//				slog.Info("all jobs completed", "event_id", jobResult.Job.Event.UID, "completed_jobs", actualJobs)
+//			}
+//			d.lock.Unlock()
+//		}
+//	}
+//
+//	func (d *Dispatcher) getAvailableWorker() *worker.Worker {
+//		return d.Workers[0]
+//	}
+//
+//	func (d *Dispatcher) GetJobsByEventUID(eventUID string) []*worker.JobResult {
+//		return d.JobResults[eventUID]
+//	}
 func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 	for event := range eventChannel {
 		slog.Info("dispatching event", "id", event.UID, "type", event.EventType)
@@ -98,9 +118,9 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 			event.CompletedAt = time.Now()
 			continue
 		}
-		d.lock.Lock()
-		d.eventJobs[event.UID] = len(subscriptions)
-		d.lock.Unlock()
+		// d.lock.Lock()
+		// d.eventJobs[event.UID] = len(subscriptions)
+		// d.lock.Unlock()
 		// Fanout all the subscriptions for concurrent execution
 		for _, sub := range subscriptions {
 			sub.StartedAt = time.Now()
@@ -110,17 +130,23 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 				Subscription: sub,
 			}
 			wrk := d.getAvailableWorker()
-			slog.Info("scheduled job", "job_id", job.ID, "event_type", event.EventType, "worker_id", wrk.ID)
-			m.RecordDispatchLatency(&event)
-			wrk.JobQueue <- job
+			err := wrk.DispatchJob(job)
+			if err != nil {
+				slog.Error("error creating redis task", "err", err)
+				continue
+			}
+			// wrk := d.getAvailableWorker()
+			// slog.Info("scheduled job", "job_id", job.ID, "event_type", event.EventType, "worker_id", wrk.ID)
+			// m.RecordDispatchLatency(&event)
+			// wrk.JobQueue <- job
 		}
 	}
 }
 
-func (d *Dispatcher) Stop() {
-	slog.Info("Shutting down dispatcher...")
-	for _, worker := range d.Workers {
-		worker.Stop()
-	}
-	slog.Info("jobs processed", "total", d.totalJobs)
-}
+// func (d *Dispatcher) Stop() {
+// 	slog.Info("Shutting down dispatcher...")
+// 	for _, worker := range d.Workers {
+// 		worker.Stop()
+// 	}
+// 	slog.Info("jobs processed", "total", d.totalJobs)
+// }

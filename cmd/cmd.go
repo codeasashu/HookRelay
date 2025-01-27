@@ -3,19 +3,23 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
+	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/logger"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
+	"github.com/codeasashu/HookRelay/pkg/worker"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 )
 
 var g errgroup.Group
@@ -24,15 +28,49 @@ func main() {
 	cli.Execute()
 	slog.SetDefault(logger.New())
 
+	// Init once
+	metrics.GetDPInstance()
+
+	if config.HRConfig.IsQueueWorker() {
+		startWorkerQueueMode()
+	} else if config.HRConfig.IsPubsubWorker() {
+		worker.StartPubsubWorker()
+	} else {
+		startServerMode()
+	}
+}
+
+func startWorkerQueueMode() {
+	slog.Info("staring queue worker")
+	sigs := make(chan os.Signal, 1)
+	metricsSrv := worker.StartMetricsServer()
+	srv := worker.StartQueueWorker(sigs)
+
+	// Wait for termination signal.
+	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT)
+	<-sigs
+
+	// Stop worker server.
+	srv.Shutdown()
+
+	// Stop metrics server.
+	if err := metricsSrv.Shutdown(context.Background()); err != nil {
+		slog.Error("Error: metrics server shutdown", "err", err)
+	}
+}
+
+func startServerMode() {
+	slog.Info("Staring HookRelay...")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
-	// Init once
-	m := metrics.GetDPInstance()
-	go m.StartGoroutineMonitor(ctx)
+	// Always start a local worker per server
+	wrk := worker.StartLocalWorker()
 
 	disp := dispatcher.NewDispatcher()
-	disp.Start()
+	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
+	// disp.AddPubsubWorker()
+	// disp.Start()
 
 	apiServer := api.InitApiServer()
 	// Add subscription API
@@ -60,17 +98,12 @@ func main() {
 	}()
 
 	if err := g.Wait(); err != nil {
-		disp.Stop()
-		slog.Error("Error while waiting for goroutines to complete.", slog.Any("error", err))
+		// disp.Stop()
+		if err != http.ErrServerClosed {
+			slog.Error("Error while waiting for goroutines to complete.", slog.Any("error", err))
+		}
 		os.Exit(0)
 	}
-
-	// <-ctx.Done()
-	// log.Printf("shutddown down...")
-
-	// disp.Stop()
-	// httpListenerServer.StartAndReceive()
-	// Wait for interrupt signal to gracefully shutdown the server with a timeout of 10 seconds.
 
 	// Run indefinitely
 	select {}
