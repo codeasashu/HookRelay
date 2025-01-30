@@ -47,7 +47,7 @@ concurrency = 10
 # username = "admin"
 # password = "admin"
 # database = "hookrelay"
-# pptions = "tls-insecure-skip-verify=false&connect_timeout=30"
+# options = "tls-insecure-skip-verify=false&connect_timeout=30"
 # port = 5432
 
 # Mysql DB
@@ -57,7 +57,7 @@ host = "localhost"
 username = "admin"
 password = "admin"
 database = "hookrelay"
-pptions = "tls-insecure-skip-verify=false&connect_timeout=30"
+options = "tls-insecure-skip-verify=false&connect_timeout=30"
 port = 3306
 `
 )
