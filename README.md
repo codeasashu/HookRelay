@@ -115,13 +115,19 @@ Migrations are created using [golang-migrate](https://github.com/golang-migrate/
 ```sh
 brew install golang-migrate
 
-# Create a migration
-migrate create -ext sql -dir migrations -seq create_subscriptions
+# Create a migration for postgresql
+migrate create -ext sql -dir migrations/postgres -seq create_subscriptions
 
-# Apply all migration
+# Create a migration for mysql
+migrate create -ext sql -dir migrations/mysql -seq create_subscriptions
+
+# Apply all migration (for postgresql)
 export POSTGRESQL_URL='postgres://admin:admin@localhost:5432/hookrelay?sslmode=disable'
-migrate -database ${POSTGRESQL_URL} -path migrations/ up
+migrate -database ${POSTGRESQL_URL} -path migrations/postgres up
 
+# Apply all migration (for mysql)
+export MYSQL_URL='mysql://admin:admin@tcp(localhost:3306)/hookrelay?x-tls-insecure-skip-verify=false'
+migrate -database ${MYSQL_URL} -path migrations/mysql up
 ```
 
 will create migrations

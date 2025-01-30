@@ -40,14 +40,25 @@ addr = "127.0.0.1:6379"
 db = 0
 concurrency = 10
 
+# postgres DB
+# [database]
+# scheme = "postgres"
+# host = "localhost"
+# username = "admin"
+# password = "admin"
+# database = "hookrelay"
+# pptions = "tls-insecure-skip-verify=false&connect_timeout=30"
+# port = 5432
+
+# Mysql DB
 [database]
-scheme = "postgres"
+scheme = "mysql"
 host = "localhost"
 username = "admin"
 password = "admin"
 database = "hookrelay"
-pptions = "sslmode=disable&connect_timeout=30"
-port = 5432
+pptions = "tls-insecure-skip-verify=false&connect_timeout=30"
+port = 3306
 `
 )
 

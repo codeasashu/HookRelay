@@ -4,6 +4,7 @@ go 1.23.2
 
 require (
 	github.com/gin-gonic/gin v1.10.0
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/hibiken/asynq v0.25.1
 	github.com/hibiken/asynq/x v0.0.0-20241211061937-489e21920b92
 	github.com/jackc/pgx/v5 v5.7.2
@@ -19,6 +20,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect

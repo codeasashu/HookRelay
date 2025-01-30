@@ -60,6 +60,7 @@ func parseDBConfig(dbConfig config.DatabaseConfiguration) (*Postgres, error) {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
+	slog.Info("Connecting to postgres...")
 	if dbConfig.SetMaxOpenConnections > 0 {
 		pgxCfg.MaxConns = int32(dbConfig.SetMaxOpenConnections)
 	}

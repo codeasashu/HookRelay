@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/target"
 )
@@ -54,8 +55,9 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 
 	query := `
     INSERT INTO hookrelay.subscription (id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES (:id, :owner_id, :target_url, :target_method, :target_params, :target_auth, :event_types, :status, :filters, :tags, :created, :modified)
     `
+	// VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 
 	eventTypes, err := json.Marshal(s.EventTypes)
 	if err != nil {
@@ -69,11 +71,27 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 		return err
 	}
 
+	args := map[string]interface{}{
+		"id":            s.ID,
+		"owner_id":      s.OwnerId,
+		"target_url":    s.Target.HTTPDetails.URL,
+		"target_method": s.Target.HTTPDetails.Method,
+		"target_params": "[]",
+		"target_auth":   "{}",
+		"event_types":   eventTypes,
+		"status":        int(SubscriptionActive),
+		"filters":       "[]",
+		"tags":          tags,
+		"created":       s.CreatedAt,
+		"modified":      s.CreatedAt,
+	}
+
 	slog.Info("creating subscription", "id", s.ID)
 
-	result, err := r.db.GetDB().Exec(
+	result, err := r.db.GetDB().NamedExec(
 		query,
-		s.ID, s.OwnerId, s.Target.HTTPDetails.URL, s.Target.HTTPDetails.Method, "[]", "{}", eventTypes, int(SubscriptionActive), "[]", tags, s.CreatedAt, s.CreatedAt,
+		args,
+		// s.ID, s.OwnerId, s.Target.HTTPDetails.URL, s.Target.HTTPDetails.Method, "[]", "{}", eventTypes, int(SubscriptionActive), "[]", tags, s.CreatedAt, s.CreatedAt,
 	)
 	if err != nil {
 		slog.Error("DB error creating subscription", "err", err)
@@ -94,10 +112,10 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 
 func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscription, error) {
 	query := `
-    SELECT * FROM hookrelay.subscription WHERE owner_id = $1
+    SELECT * FROM hookrelay.subscription WHERE owner_id = :owner_id
     `
 
-	rows, err := r.db.GetDB().Queryx(query, ownerID)
+	rows, err := r.db.GetDB().NamedQuery(query, map[string]interface{}{"owner_id": ownerID})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrSubscriptionNotFound
@@ -108,11 +126,11 @@ func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscri
 
 	var subscriptions []*Subscription
 	for rows.Next() {
-		var sub Subscription
+		var sub *Subscription
 		if err := rows.StructScan(&sub); err != nil {
 			return nil, err
 		}
-		subscriptions = append(subscriptions, &sub)
+		subscriptions = append(subscriptions, sub)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -123,12 +141,26 @@ func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscri
 }
 
 func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscription, error) {
-	query := `
+	var query string
+	if config.HRConfig.Database.Type == config.PostgresDatabaseProvider {
+		query = `
     SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
     FROM hookrelay.subscription
-    WHERE owner_id = $1
-    AND event_types @> $2
+    WHERE owner_id = :owner_id
+    AND event_types @> :event_types
     `
+	} else {
+		query = `
+    SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
+    FROM hookrelay.subscription
+    WHERE owner_id = :owner_id
+    AND (JSON_CONTAINS(event_types, :event_types) OR JSON_CONTAINS(event_types, '"*"'))
+    `
+	}
+
+	if query == "" {
+		return nil, fmt.Errorf("unsupported database type: %s", config.HRConfig.Database.Type)
+	}
 
 	// Convert the event_type into a JSON array for the query
 	eventTypeJSON, err := json.Marshal([]string{eventType})
@@ -136,7 +168,8 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 		return nil, fmt.Errorf("failed to marshal event type: %v", err)
 	}
 
-	rows, err := r.db.GetDB().Query(query, ownerID, eventTypeJSON)
+	args := map[string]interface{}{"owner_id": ownerID, "event_types": eventTypeJSON}
+	rows, err := r.db.GetDB().NamedQuery(query, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // No subscriptions found
@@ -184,17 +217,27 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 	return subscriptions, nil
 }
 
-func (r *SubscriptionModel) HasSubscriptions(subscrptionId string) (bool, error) {
+func (r *SubscriptionModel) HasSubscriptions(subscriptionId string) (bool, error) {
 	query := `
-    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=$1
+    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=:id
     `
 
+	args := map[string]interface{}{"id": subscriptionId}
+
 	var count int
-	err := r.db.GetDB().Get(&count, query, subscrptionId)
+	nstmt, err := r.db.GetDB().PrepareNamed(query)
+	if err != nil {
+		slog.Error("error in fetching subscription count", "err", err)
+		return false, err
+	}
+	defer nstmt.Close()
+
+	err = nstmt.Get(&count, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil // No subscriptions found, no error
 		}
+		slog.Error("error in fetching subscription count", "err", err)
 		return false, err // Database error
 	}
 

@@ -7,7 +7,10 @@ import (
 
 type DatabaseProvider string
 
-const PostgresDatabaseProvider DatabaseProvider = "postgres"
+const (
+	PostgresDatabaseProvider DatabaseProvider = "postgres"
+	MySQLDatabaseProvider    DatabaseProvider = "mysql"
+)
 
 type DatabaseConfiguration struct {
 	Type DatabaseProvider `json:"type" mapstructure:"type"`

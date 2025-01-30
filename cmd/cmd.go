@@ -49,7 +49,8 @@ func Init(app *cli.App) {
 	metrics.GetDPInstance()
 
 	// Init DB
-	db, err := database.NewPostgreSQLStorage()
+	// db, err := database.NewPostgreSQLStorage()
+	db, err := database.NewMySQLStorage()
 	if err != nil {
 		slog.Error("error connecting to db", "err", err)
 		os.Exit(1)
