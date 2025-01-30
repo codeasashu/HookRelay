@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,22 +64,25 @@ func GetDPInstance() *Metrics {
 
 func newMetrics(pr prometheus.Registerer) *Metrics {
 	m := InitMetrics()
+	app := cli.GetAppInstance()
 
 	if m.IsEnabled {
 		pr.MustRegister(
-			m.IngestTotal,
-			m.IngestLatency,
-			m.TotalSubscriptions,
-			m.FanoutSize,
-			m.PreFlightLatency,
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 			collectors.NewGoCollector(),
 		)
 	}
 
-	if config.HRConfig.IsLocalWorker() && m.IsEnabled {
+	if !app.IsWorker && m.IsEnabled {
 		pr.MustRegister(
+			m.IngestTotal,
+			m.IngestLatency,
+			m.TotalSubscriptions,
+			m.FanoutSize,
+			m.PreFlightLatency,
+
+			// Local worker metrics
 			m.IngestConsumedTotal,
 			m.IngestErrorsTotal,
 			m.IngestSuccessTotal,
@@ -89,7 +93,7 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 		)
 	}
 
-	if config.HRConfig.IsQueueWorker() && m.IsEnabled {
+	if app.IsWorker && m.IsEnabled {
 		inspector := asynq.NewInspector(asynq.RedisClientOpt{
 			Addr:     config.HRConfig.QueueWorker.Addr,
 			DB:       config.HRConfig.QueueWorker.Db,
@@ -243,13 +247,12 @@ func InitMetrics() *Metrics {
 	return m
 }
 
-func (m *Metrics) RecordEndToEndLatency(ev *event.Event) {
+func (m *Metrics) RecordEndToEndLatency(ev *event.EventDelivery) {
 	if !m.IsEnabled {
 		return
 	}
 
-	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Millisecond)
+	t := float64(ev.Latency) / float64(time.Millisecond)
 	// m.EventDeliveryLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
 	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
 }

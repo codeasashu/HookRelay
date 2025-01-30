@@ -3,6 +3,7 @@ package event
 import (
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -26,4 +27,9 @@ func New() *Event {
 
 func (e *Event) Ack() {
 	e.AcknowledgedAt = time.Now()
+}
+
+func (e *Event) Save(app *cli.App) {
+	model := NewEventModel(app.DB)
+	model.CreateEvent(e)
 }

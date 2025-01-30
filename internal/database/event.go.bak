@@ -1,0 +1,40 @@
+package database
+
+import (
+	"errors"
+
+	"github.com/codeasashu/HookRelay/internal/event"
+)
+
+type EventDeliveryRepo struct {
+	db Database
+}
+
+var ErrDeliveryNotCreated = errors.New("event delivery could not be created")
+
+func NewEventDeliveryRepo(db Database) *EventDeliveryRepo {
+	return &EventDeliveryRepo{db: db}
+}
+
+func (r *EventDeliveryRepo) CreateEventDelivery(e *event.Event) error {
+	query := `
+    INSERT INTO event_delivery (id, owner_id, event_type, payload, idempotency_key, custom_headers, accepted_at, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `
+
+	result, err := r.db.GetDB().Exec(query, e.UID, e.OwnerId, e.EventType, e.Payload, "", "", e.AcknowledgedAt, e.CreatedAt, e.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected < 1 {
+		return ErrDeliveryNotCreated
+	}
+
+	return nil
+}

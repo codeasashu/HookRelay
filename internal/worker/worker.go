@@ -6,7 +6,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
-	"github.com/codeasashu/HookRelay/pkg/subscription"
+	"github.com/codeasashu/HookRelay/internal/subscription"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -17,12 +17,7 @@ type Job struct {
 	ID           string
 	Event        *event.Event
 	Subscription *subscription.Subscription
-	Result       *JobResult
-}
-
-type JobResult struct {
-	Status string
-	Error  error
+	Result       *event.EventDelivery
 }
 
 type WorkerPool struct {
@@ -60,11 +55,4 @@ func (w *Worker) DispatchJob(job *Job) error {
 		slog.Error("error sending job", "client", w.client, "worker", job.ID)
 	}
 	return nil
-}
-
-// processJob simulates the actual job processing (e.g., an HTTP call).
-func processJob(job *Job) error {
-	// time.Sleep(3 * time.Second) // Simulate processing time.
-	// return nil
-	return job.Subscription.Target.ProcessTarget(job.Event.Payload)
 }

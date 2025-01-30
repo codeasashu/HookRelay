@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/event"
@@ -16,6 +17,7 @@ import (
 var m *metrics.Metrics
 
 type HTTPListener struct {
+	app          *cli.App
 	ListenerChan chan event.Event
 	QueueSize    int
 	dispatcher   *dispatcher.Dispatcher
@@ -39,6 +41,7 @@ func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
 	}
 	m.IncrementIngestTotal()
 	event.Ack()
+	event.Save(l.app)
 	slog.Info("Acknowledge evnet", "id", event.UID, "type", event.EventType)
 	return event, nil
 }
@@ -61,7 +64,9 @@ func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
 
 func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
 	m = metrics.GetDPInstance()
+	app := cli.GetAppInstance()
 	listener := &HTTPListener{
+		app: app,
 		server: &http.Server{
 			Addr: addr,
 		},

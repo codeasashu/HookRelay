@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/subscription"
 	"github.com/codeasashu/HookRelay/internal/target"
-	"github.com/codeasashu/HookRelay/pkg/subscription"
 )
 
 //	func TestListenerStarts(t *testing.T) {

@@ -5,42 +5,32 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/worker"
 
-	"github.com/codeasashu/HookRelay/pkg/subscription"
+	"github.com/codeasashu/HookRelay/internal/subscription"
 )
 
 var m *metrics.Metrics
 
 type Dispatcher struct {
-	lock       *sync.RWMutex
-	Workers    []*worker.Worker
-	JobResults map[string][]*worker.JobResult
-	eventJobs  map[string]int
-	totalJobs  int
+	lock    *sync.RWMutex
+	Workers []*worker.Worker
 }
 
 func NewDispatcher() *Dispatcher {
 	m = metrics.GetDPInstance()
 	// wrk := worker.NewWorker()
 	return &Dispatcher{
-		lock:       &sync.RWMutex{},
-		Workers:    []*worker.Worker{},
-		JobResults: make(map[string][]*worker.JobResult),
-		eventJobs:  make(map[string]int),
-		totalJobs:  0,
+		lock:    &sync.RWMutex{},
+		Workers: []*worker.Worker{},
 	}
 }
 
 func (d *Dispatcher) AddQueueWorker() {
 	wrk := worker.NewQueueWorker()
-	d.Workers = append(d.Workers, wrk)
-}
-
-func (d *Dispatcher) AddPubsubWorker() {
-	wrk := worker.NewPubsubWorker()
 	d.Workers = append(d.Workers, wrk)
 }
 
@@ -108,10 +98,19 @@ func (d *Dispatcher) getAvailableWorker() *worker.Worker {
 //		return d.JobResults[eventUID]
 //	}
 func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
+	app := cli.GetAppInstance()
+
+	subModel := subscription.NewSubscriptionModel(app.DB)
 	for event := range eventChannel {
 		slog.Info("dispatching event", "id", event.UID, "type", event.EventType)
 		m.RecordPreFlightLatency(&event)
-		subscriptions := subscription.GetSubscriptionsByEventType(event.EventType)
+		subscriptions, err := subModel.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
+		if err != nil {
+			slog.Error("error fetching subscriptions", "err", err)
+			event.CompletedAt = time.Now()
+			continue
+		}
+
 		slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType)
 		m.RecordFanout(&event, len(subscriptions))
 		if len(subscriptions) == 0 {
@@ -127,7 +126,7 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 			job := &worker.Job{
 				ID:           event.UID + "-" + sub.ID,
 				Event:        &event,
-				Subscription: sub,
+				Subscription: &sub,
 			}
 			wrk := d.getAvailableWorker()
 			err := wrk.DispatchJob(job)

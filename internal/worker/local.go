@@ -7,13 +7,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/oklog/ulid/v2"
 )
 
 type LocalClient struct {
 	ID            string
+	app           *cli.App
 	ctx           context.Context
 	client        string
 	JobQueue      chan *Job
@@ -23,10 +26,9 @@ type LocalClient struct {
 	activeThreads int32          // Active thread count (atomic counter)
 	StopChan      chan struct{}  // Signal for stopping the worker
 	wg            sync.WaitGroup // WaitGroup for graceful shutdown
-	channel       string
 }
 
-func NewLocalWorker() *Worker {
+func NewLocalWorker(app *cli.App) *Worker {
 	minThreads := config.HRConfig.LocalWorker.MinThreads
 	maxThreads := config.HRConfig.LocalWorker.MaxThreads
 	if maxThreads != -1 && maxThreads < minThreads {
@@ -39,8 +41,8 @@ func NewLocalWorker() *Worker {
 		ID: ulid.Make().String(),
 		client: &LocalClient{
 			ctx:        context.Background(),
+			app:        app,
 			client:     "",
-			channel:    config.HRConfig.PubsubWorker.Channel,
 			JobQueue:   make(chan *Job, config.HRConfig.LocalWorker.QueueSize/2), // Buffer size for job queue
 			MaxThreads: maxThreads,
 			MinThreads: minThreads,
@@ -90,6 +92,7 @@ func (c *LocalClient) scaleThreads(interval time.Duration) {
 
 // launchThread starts a new thread to process jobs.
 func (w *LocalClient) launchThread() {
+	// app := cli.GetAppInstance()
 	w.wg.Add(1)
 	atomic.AddInt32(&w.activeThreads, 1)
 	m.UpdateWorkerThreadCount(w.ID, int(w.activeThreads))
@@ -108,19 +111,13 @@ func (w *LocalClient) launchThread() {
 			case job := <-w.JobQueue:
 				slog.Info("got job item", "job_id", job.ID)
 				job.Subscription.Dispatch()
-				err := processJob(job)
+				statusCode, err := job.Subscription.Target.ProcessTarget(job.Event.Payload)
 				job.Subscription.Complete()
-				status := "success"
-				if err != nil {
-					status = "failed"
-				}
-
-				// Send result to result queue.
 				slog.Info("job complete. sending result", "job_id", job.ID)
-				job.Result = &JobResult{
-					Status: status,
-					Error:  err,
-				}
+				job.Result = event.NewEventDelivery(job.Event, job.Subscription.ID, statusCode, err)
+				// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+				// deliveryModel := event.NewEventModel(app.DB)
+				// deliveryModel.CreateEventDelivery(job.Result)
 				w.resultQueue <- job
 			case <-w.StopChan:
 				return
@@ -144,14 +141,19 @@ func (w *LocalClient) Stop() {
 }
 
 func ProcessResultsFromLocalChan(jobChan <-chan *Job) {
+	app := cli.GetAppInstance()
 	for job := range jobChan {
 		m.IncrementIngestConsumedTotal(job.Event)
-		if job.Result.Status == "success" {
+		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+		deliveryModel := event.NewEventModel(app.DB)
+		deliveryModel.CreateEventDelivery(job.Result)
+		if job.Result.IsSuccess() {
+			slog.Info("job completed", "job_id", job.ID)
 			m.IncrementIngestSuccessTotal(job.Event)
 		} else {
+			slog.Error("job failed", "job_id", job.ID)
 			m.IncrementIngestErrorsTotal(job.Event)
 		}
-		m.RecordEndToEndLatency(job.Event)
-		slog.Info("job completed", "job_id", job.ID, "status", job.Result.Status)
+		m.RecordEndToEndLatency(job.Result)
 	}
 }
