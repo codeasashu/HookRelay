@@ -25,7 +25,6 @@ import (
 var g errgroup.Group
 
 func main() {
-	slog.SetDefault(logger.New())
 	app := cli.GetAppInstance()
 	app.Logger = slog.Default()
 	c := cli.NewCli(app)
@@ -35,6 +34,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	slog.SetDefault(logger.New())
 	Init(app)
 
 	if app.IsWorker {
