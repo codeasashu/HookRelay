@@ -38,9 +38,9 @@ func main() {
 	Init(app)
 
 	if app.IsWorker {
-		startWorkerQueueMode(app)
+		startWorkerQueueMode()
 	} else {
-		startServerMode(app)
+		startServerMode()
 	}
 }
 
@@ -57,7 +57,7 @@ func Init(app *cli.App) {
 	app.DB = db
 }
 
-func startWorkerQueueMode(app *cli.App) {
+func startWorkerQueueMode() {
 	slog.Info("staring queue worker")
 	sigs := make(chan os.Signal, 1)
 	metricsSrv := worker.StartMetricsServer()
@@ -76,7 +76,7 @@ func startWorkerQueueMode(app *cli.App) {
 	}
 }
 
-func startServerMode(app *cli.App) {
+func startServerMode() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
@@ -85,10 +85,10 @@ func startServerMode(app *cli.App) {
 
 	disp := dispatcher.NewDispatcher()
 	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
-	// disp.AddPubsubWorker()
+	disp.AddQueueWorker()
 	// disp.Start()
 
-	apiServer := api.InitApiServer(app)
+	apiServer := api.InitApiServer()
 	// Add subscription API
 	// subscription.Init()
 	subscription.AddRoutes(apiServer)

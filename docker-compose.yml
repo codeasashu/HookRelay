@@ -17,9 +17,16 @@ services:
       retries: 5
     networks:
       - hookrelay_network
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/var/lib/redis
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   hookrelay_network:

@@ -19,7 +19,8 @@ type ApiServer struct {
 	server *http.Server
 }
 
-func InitApiServer(app *cli.App) *ApiServer {
+func InitApiServer() *ApiServer {
+	app := cli.GetAppInstance()
 	apiPort := config.HRConfig.Api.Port
 	router := gin.Default()
 	s := &http.Server{

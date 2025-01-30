@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS hookrelay.event_delivery (
     completed_at TIMESTAMP WITH TIME ZONE
 );
 
+COMMENT ON COLUMN hookrelay.event_delivery.latency IS 'in microseconds';
 -- Optional: Add indexes for faster queries
 CREATE INDEX idx_eventdelivery_owner_id ON hookrelay.event_delivery (owner_id);
 CREATE INDEX idx_eventdelivery_event_id ON hookrelay.event_delivery (event_id);
