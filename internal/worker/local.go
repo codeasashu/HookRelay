@@ -110,6 +110,7 @@ func (w *LocalClient) launchThread() {
 			select {
 			case job := <-w.JobQueue:
 				slog.Info("got job item", "job_id", job.ID)
+				m.RecordDispatchLatency(job.Event)
 				job.Subscription.Dispatch()
 				statusCode, err := job.Subscription.Target.ProcessTarget(job.Event.Payload)
 				job.Subscription.Complete()

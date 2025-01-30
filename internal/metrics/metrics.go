@@ -262,7 +262,7 @@ func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
+	t := float64(d) / float64(time.Millisecond)
 	// m.PreFlightLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
 	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
@@ -272,7 +272,7 @@ func (m *Metrics) RecordDispatchLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
+	t := float64(d) / float64(time.Millisecond)
 	// m.EventDispatchLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
 	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
@@ -282,7 +282,7 @@ func (m *Metrics) RecordIngestLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
+	t := float64(d) / float64(time.Millisecond)
 	// m.IngestLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
 	m.IngestLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }

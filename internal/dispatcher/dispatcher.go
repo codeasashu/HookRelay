@@ -103,7 +103,6 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 	subModel := subscription.NewSubscriptionModel(app.DB)
 	for event := range eventChannel {
 		slog.Info("dispatching event", "id", event.UID, "type", event.EventType)
-		m.RecordPreFlightLatency(&event)
 		subscriptions, err := subModel.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
 		if err != nil {
 			slog.Error("error fetching subscriptions", "err", err)
@@ -112,7 +111,7 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 		}
 
 		slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType)
-		m.RecordFanout(&event, len(subscriptions))
+		m.RecordPreFlightLatency(&event)
 		if len(subscriptions) == 0 {
 			event.CompletedAt = time.Now()
 			continue
