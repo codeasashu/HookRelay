@@ -41,7 +41,7 @@ func NewEventDelivery(e *Event, subscription_id string, statusCode int, err erro
 		SubscriptionId: subscription_id,
 		CompletedAt:    time.Now(),
 		StatusCode:     0,
-		Latency:        float64(time.Since(e.AcknowledgedAt).Microseconds()),
+		Latency:        float64(time.Since(e.CreatedAt)) / float64(time.Microsecond),
 	}
 
 	delivery.StatusCode = statusCode

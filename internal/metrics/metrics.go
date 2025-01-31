@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"sync"
@@ -252,9 +253,8 @@ func (m *Metrics) RecordEndToEndLatency(ev *event.EventDelivery) {
 		return
 	}
 
-	t := float64(ev.Latency) / float64(time.Millisecond)
-	// m.EventDeliveryLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
-	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
+	slog.Info("e2elatency", slog.Float64("latency_ms", ev.Latency))
+	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", deliveryLabel: "http"}).Observe(ev.Latency)
 }
 
 func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
@@ -263,7 +263,7 @@ func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
 	}
 	d := time.Since(ev.CreatedAt)
 	t := float64(d) / float64(time.Millisecond)
-	// m.PreFlightLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	slog.Info("PreFlightLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
@@ -273,7 +273,7 @@ func (m *Metrics) RecordDispatchLatency(ev *event.Event) {
 	}
 	d := time.Since(ev.CreatedAt)
 	t := float64(d) / float64(time.Millisecond)
-	// m.EventDispatchLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	slog.Info("DispatchLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
@@ -283,7 +283,7 @@ func (m *Metrics) RecordIngestLatency(ev *event.Event) {
 	}
 	d := time.Since(ev.CreatedAt)
 	t := float64(d) / float64(time.Millisecond)
-	// m.IngestLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	slog.Info("IngestLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.IngestLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
