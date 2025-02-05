@@ -2,7 +2,7 @@
 
 ## Verify manual run
 
-1. Run main server `go run cmd/cmd.go`
+1. Run main server: `GIN_MODE=release /usr/local/go/bin/go run cmd/cmd.go server --config config.toml 2&>1 >outfile`
 2. (Optional) Run async worker: `go run cmd/cmd.go -queue`
 3. Create Subscription:
 
