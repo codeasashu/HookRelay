@@ -86,7 +86,7 @@ func startServerMode() {
 
 	disp := dispatcher.NewDispatcher()
 	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
-	disp.AddQueueWorker()
+	// disp.AddQueueWorker()
 	// disp.Start()
 
 	apiServer := api.InitApiServer()

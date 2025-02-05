@@ -9,16 +9,27 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/disruptor"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/oklog/ulid/v2"
 )
+
+const (
+	BufferSize   = 1024 * 64
+	BufferMask   = BufferSize - 1
+	Iterations   = 128 * 1024 * 32
+	Reservations = 1
+)
+
+var ringBuffer [BufferSize]*Job
 
 type LocalClient struct {
 	ID            string
 	app           *cli.App
 	ctx           context.Context
 	client        string
+	ruptor        *disruptor.Disruptor
 	JobQueue      chan *Job
 	resultQueue   chan<- *Job
 	MaxThreads    int            // Maximum allowed threads
@@ -26,7 +37,14 @@ type LocalClient struct {
 	activeThreads int32          // Active thread count (atomic counter)
 	StopChan      chan struct{}  // Signal for stopping the worker
 	wg            sync.WaitGroup // WaitGroup for graceful shutdown
+	metrics       *metrics.Metrics
 }
+
+type LocalConsumer struct {
+	client *LocalClient
+}
+
+var localDisruptor disruptor.Disruptor
 
 func NewLocalWorker(app *cli.App) *Worker {
 	minThreads := config.HRConfig.LocalWorker.MinThreads
@@ -37,22 +55,67 @@ func NewLocalWorker(app *cli.App) *Worker {
 	}
 
 	m = metrics.GetDPInstance()
-	return &Worker{
-		ID: ulid.Make().String(),
-		client: &LocalClient{
-			ctx:        context.Background(),
-			app:        app,
-			client:     "",
-			JobQueue:   make(chan *Job, config.HRConfig.LocalWorker.QueueSize/2), // Buffer size for job queue
-			MaxThreads: maxThreads,
-			MinThreads: minThreads,
-			StopChan:   make(chan struct{}),
-		},
+	jobResultChan := make(chan *Job, config.HRConfig.LocalWorker.QueueSize/2) // Buffered channel for queuing jobs
+	client := &LocalClient{
+		ctx:         context.Background(),
+		app:         app,
+		client:      "",
+		JobQueue:    make(chan *Job, config.HRConfig.LocalWorker.QueueSize/2), // Buffer size for job queue
+		MaxThreads:  maxThreads,
+		MinThreads:  minThreads,
+		StopChan:    make(chan struct{}),
+		metrics:     m,
+		resultQueue: jobResultChan,
+	}
+
+	w := &Worker{
+		ID:     ulid.Make().String(),
+		client: client,
+	}
+	consumer := LocalConsumer{
+		client: client,
+	}
+
+	localDisruptor = disruptor.New(
+		disruptor.WithCapacity(BufferSize),
+		disruptor.WithConsumerGroup(consumer),
+	)
+
+	go localDisruptor.Read()
+
+	slog.Info("staring pool of local workers", "children", config.HRConfig.LocalWorker.ResultHandlerThreads)
+	for i := 0; i < config.HRConfig.LocalWorker.ResultHandlerThreads; i++ {
+		go ProcessResultsFromLocalChan(jobResultChan)
+	}
+
+	return w
+}
+
+func (c LocalConsumer) Consume(lowerSequence, upperSequence int64) {
+	for sequence := lowerSequence; sequence <= upperSequence; sequence++ {
+		index := sequence & BufferMask
+		job := ringBuffer[index]
+
+		slog.Info("got job item", "job_id", job.ID)
+		c.client.metrics.RecordDispatchLatency(job.Event)
+		job.Subscription.Dispatch()
+		statusCode, err := job.Subscription.Target.ProcessTarget(job.Event.Payload)
+		job.Subscription.Complete()
+		slog.Info("job complete. sending result", "job_id", job.ID)
+		job.Result = event.NewEventDelivery(job.Event, job.Subscription.ID, statusCode, err)
+		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+		// deliveryModel := event.NewEventModel(app.DB)
+		// deliveryModel.CreateEventDelivery(job.Result)
+		c.client.resultQueue <- job
 	}
 }
 
 func (c *LocalClient) SendJob(job *Job) error {
-	c.JobQueue <- job
+	// c.JobQueue <- job
+	sequence := localDisruptor.Reserve(1)
+	ringBuffer[sequence&BufferMask] = job
+	localDisruptor.Commit(sequence, sequence)
+	slog.Info("Sending job", "job", job)
 	return nil
 }
 
