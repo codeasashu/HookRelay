@@ -108,6 +108,30 @@ retryQueue:
     brokers: ["localhost:9092"]
 ```
 
+### Migrations
+
+Migrations are created using [golang-migrate](https://github.com/golang-migrate/migrate) tool. Running command such as:
+
+```sh
+brew install golang-migrate
+
+# Create a migration for postgresql
+migrate create -ext sql -dir migrations/postgres -seq create_subscriptions
+
+# Create a migration for mysql
+migrate create -ext sql -dir migrations/mysql -seq create_subscriptions
+
+# Apply all migration (for postgresql)
+export POSTGRESQL_URL='postgres://admin:admin@localhost:5432/hookrelay?sslmode=disable'
+migrate -database ${POSTGRESQL_URL} -path migrations/postgres up
+
+# Apply all migration (for mysql)
+export MYSQL_URL='mysql://admin:admin@tcp(localhost:3306)/hookrelay?x-tls-insecure-skip-verify=false'
+migrate -database ${MYSQL_URL} -path migrations/mysql up
+```
+
+will create migrations
+
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines.

@@ -1,0 +1,70 @@
+package database
+
+import (
+	"database/sql"
+	"errors"
+
+	"github.com/codeasashu/HookRelay/internal/subscription"
+)
+
+type SubscriptionStatus int
+
+const (
+	SubscriptionDeleted SubscriptionStatus = 0
+	SubscriptionActive  SubscriptionStatus = 1
+)
+
+type SubscriptionModel struct {
+	db Database
+}
+
+var (
+	ErrSubscriptionNotCreated = errors.New("subscription could not be created")
+	ErrSubscriptionNotFound   = errors.New("subscription could not be found")
+)
+
+func NewSubscriptionModel(db Database) *SubscriptionModel {
+	return &SubscriptionModel{db: db}
+}
+
+func (r *SubscriptionModel) CreateSubscription(s *subscription.Subscription) error {
+	query := `
+    INSERT INTO subscription (id, owner_id, target_url, target_params, target_auth, event_types, status, filters, tags, created, modified)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `
+
+	result, err := r.db.GetDB().Exec(
+		query,
+		s.ID, s.OwnerId, s.Target.HTTPDetails.URL, "", "", "", s.EventTypes, SubscriptionActive, "", "", s.CreatedAt, s.CreatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected < 1 {
+		return ErrSubscriptionNotCreated
+	}
+
+	return nil
+}
+
+func (r *SubscriptionModel) FindSubscription(owner_id string) (*subscription.Subscription, error) {
+	query := `
+    SELECT * FROM subscription WHERE  owner_id = $1
+    `
+	s := &subscription.Subscription{}
+
+	err := r.db.GetDB().QueryRowx(query, owner_id).StructScan(s)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSubscriptionNotFound
+		}
+		return nil, err
+	}
+	return s, nil
+}

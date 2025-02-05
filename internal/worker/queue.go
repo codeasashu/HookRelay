@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/hibiken/asynq"
 
@@ -73,6 +75,7 @@ func NewQueueJob(job *Job) (*asynq.Task, error) {
 }
 
 func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
+	app := cli.GetAppInstance()
 	var j Job
 	m := ctx.Value(metrics.MetricsContextKey).(*metrics.Metrics)
 	if err := json.Unmarshal(t.Payload(), &j); err != nil {
@@ -80,14 +83,19 @@ func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
 	}
 	m.RecordDispatchLatency(j.Event)
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
-	err := processJob(&j)
+	// err := processJob(&j)
+	statusCode, err := j.Subscription.Target.ProcessTarget(j.Event.Payload)
 	m.IncrementIngestConsumedTotal(j.Event)
 	if err != nil {
 		m.IncrementIngestSuccessTotal(j.Event)
 	} else {
 		m.IncrementIngestErrorsTotal(j.Event)
 	}
+
+	j.Result = event.NewEventDelivery(j.Event, j.Subscription.ID, statusCode, err)
+	deliveryModel := event.NewEventModel(app.DB)
+	deliveryModel.CreateEventDelivery(j.Result)
 	slog.Info("Finished Processing job", "job_id", j.ID, "event_id", j.Event.UID)
-	m.RecordEndToEndLatency(j.Event)
+	m.RecordEndToEndLatency(j.Result)
 	return nil
 }

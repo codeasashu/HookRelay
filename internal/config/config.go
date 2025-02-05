@@ -8,13 +8,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-type WorkerType string
-
-const (
-	QueueWorker  WorkerType = "queue"
-	PubSubWorker WorkerType = "pubsub"
-)
-
 const (
 	DefaultConfigName     = "hookrelay"
 	DefaultConfigDir      = "."
@@ -47,11 +40,25 @@ addr = "127.0.0.1:6379"
 db = 0
 concurrency = 10
 
-[pubsub_worker]
-addr = "127.0.0.1:6379"
-db = 0
-channel = "hookrelay:pubsub"
-threads = 100
+# postgres DB
+# [database]
+# scheme = "postgres"
+# host = "localhost"
+# username = "admin"
+# password = "admin"
+# database = "hookrelay"
+# options = "tls-insecure-skip-verify=false&connect_timeout=30"
+# port = 5432
+
+# Mysql DB
+[database]
+scheme = "mysql"
+host = "localhost"
+username = "admin"
+password = "admin"
+database = "hookrelay"
+options = "tls-insecure-skip-verify=false&connect_timeout=30"
+port = 3306
 `
 )
 
@@ -85,16 +92,6 @@ type QueueWorkerConfig struct {
 	Concurrency int    `mapstructure:"concurrency"`
 }
 
-type PubsubWorkerConfig struct {
-	Addr      string `mapstructure:"addr"` // in milliseconds
-	Db        int    `mapstructure:"db"`
-	Username  string `mapstructure:"username"`
-	Password  string `mapstructure:"password"`
-	Channel   string `mapstructure:"channel"`
-	Threads   int    `mapstructure:"threads"`
-	QueueSize int    `mapstructure:"queue_size"`
-}
-
 type MetricsConfig struct {
 	Enabled    bool   `mapstructure:"enabled"`
 	WorkerAddr string `mapstructure:"worker_addr"`
@@ -106,35 +103,22 @@ type LoggingConfig struct {
 }
 
 type Config struct {
-	Listener     ListenerConfig     `mapstructure:"listener"`
-	Api          ApiConfig          `mapstructure:"api"`
-	Metrics      MetricsConfig      `mapstructure:"metrics"`
-	Logging      LoggingConfig      `mapstructure:"logging"`
-	LocalWorker  LocalWorkerConfig  `mapstructure:"local_worker"`
-	QueueWorker  QueueWorkerConfig  `mapstructure:"queue_worker"`
-	PubsubWorker PubsubWorkerConfig `mapstructure:"pubsub_worker"`
+	Listener ListenerConfig `mapstructure:"listener"`
+	Api      ApiConfig      `mapstructure:"api"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	Logging  LoggingConfig  `mapstructure:"logging"`
 
-	IsWorker   bool
-	WorkerType WorkerType
+	// Worker
+	LocalWorker LocalWorkerConfig `mapstructure:"local_worker"`
+	QueueWorker QueueWorkerConfig `mapstructure:"queue_worker"`
+
+	// DB
+	Database DatabaseConfiguration `json:"database" mapstructure:"database"`
 }
 
 var HRConfig Config
 
-func (c *Config) IsQueueWorker() bool {
-	return c.WorkerType == QueueWorker
-}
-
-func (c *Config) IsPubsubWorker() bool {
-	return c.WorkerType == PubSubWorker
-}
-
-func (c *Config) IsLocalWorker() bool {
-	// A local worker is always starts with main server
-	// However, it is never present in pubsub/queue worker type
-	return !c.IsWorker
-}
-
-func LoadConfig(customConfigPath string, workerType string) (*Config, error) {
+func LoadConfig(customConfigPath string) (*Config, error) {
 	v := viper.New()
 
 	// Set default configuration
@@ -165,12 +149,6 @@ func LoadConfig(customConfigPath string, workerType string) (*Config, error) {
 	if err := v.Unmarshal(&HRConfig); err != nil {
 		log.Printf("error unmarshaling configuration: %s", err)
 		return nil, errors.New("error unmarshaling configuration")
-	}
-
-	HRConfig.IsWorker = false
-	if workerType != "" {
-		HRConfig.IsWorker = true
-		HRConfig.WorkerType = WorkerType(workerType)
 	}
 
 	return &HRConfig, nil

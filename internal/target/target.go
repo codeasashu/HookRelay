@@ -1,8 +1,6 @@
 package target
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 )
 
@@ -26,26 +24,18 @@ type Target struct {
 	// WebSocketDetails *WebSocketDetails `json:"websocket_details,omitempty"`
 }
 
-func genSHA(str string) (string, error) {
-	h := sha1.New()
-	if _, err := h.Write([]byte(str)); err != nil {
-		return "", err
+func NewHTTPTarget(url string, method string) (*Target, error) {
+	if url == "" {
+		return nil, errors.New("url is empty")
 	}
-	sha1_hash := hex.EncodeToString(h.Sum(nil))
-	return sha1_hash, nil
-}
-
-func (t *Target) GetID() (string, error) {
-	if t == nil {
-		return "", errors.New("target is nil")
+	t := &Target{
+		Type: TargetHTTP,
+		HTTPDetails: &HTTPDetails{
+			URL:    url,
+			Method: HTTPMethod(method),
+		},
 	}
-	if t.Type == TargetHTTP {
-		if t.HTTPDetails == nil {
-			return "", errors.New("HTTP details are nil")
-		}
-		return genSHA(t.HTTPDetails.URL)
-	}
-	return "", errors.New("target type is invalid")
+	return t, nil
 }
 
 func ValidateTarget(target Target) error {

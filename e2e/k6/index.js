@@ -66,7 +66,7 @@ export function setup() {
     // 10 targets per owner
     const subscription = {
       owner_id: `owner_${i}`,
-      event_type: EVENT_TYPES[0], // Make this variable lateron
+      event_types: EVENT_TYPES, // Make this variable lateron
       target: {
         type: "http",
         http_details: {

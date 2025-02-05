@@ -2,11 +2,13 @@ package metrics
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,22 +65,25 @@ func GetDPInstance() *Metrics {
 
 func newMetrics(pr prometheus.Registerer) *Metrics {
 	m := InitMetrics()
+	app := cli.GetAppInstance()
 
 	if m.IsEnabled {
 		pr.MustRegister(
-			m.IngestTotal,
-			m.IngestLatency,
-			m.TotalSubscriptions,
-			m.FanoutSize,
-			m.PreFlightLatency,
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 			collectors.NewGoCollector(),
 		)
 	}
 
-	if config.HRConfig.IsLocalWorker() && m.IsEnabled {
+	if !app.IsWorker && m.IsEnabled {
 		pr.MustRegister(
+			m.IngestTotal,
+			m.IngestLatency,
+			m.TotalSubscriptions,
+			m.FanoutSize,
+			m.PreFlightLatency,
+
+			// Local worker metrics
 			m.IngestConsumedTotal,
 			m.IngestErrorsTotal,
 			m.IngestSuccessTotal,
@@ -89,7 +94,7 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 		)
 	}
 
-	if config.HRConfig.IsQueueWorker() && m.IsEnabled {
+	if app.IsWorker && m.IsEnabled {
 		inspector := asynq.NewInspector(asynq.RedisClientOpt{
 			Addr:     config.HRConfig.QueueWorker.Addr,
 			DB:       config.HRConfig.QueueWorker.Db,
@@ -243,15 +248,13 @@ func InitMetrics() *Metrics {
 	return m
 }
 
-func (m *Metrics) RecordEndToEndLatency(ev *event.Event) {
+func (m *Metrics) RecordEndToEndLatency(ev *event.EventDelivery) {
 	if !m.IsEnabled {
 		return
 	}
 
-	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Millisecond)
-	// m.EventDeliveryLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
-	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", deliveryLabel: "http"}).Observe(t)
+	slog.Info("e2elatency", slog.Float64("latency_ms", ev.Latency))
+	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", deliveryLabel: "http"}).Observe(ev.Latency)
 }
 
 func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
@@ -259,8 +262,8 @@ func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
-	// m.PreFlightLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	t := float64(d) / float64(time.Millisecond)
+	slog.Info("PreFlightLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
@@ -269,8 +272,8 @@ func (m *Metrics) RecordDispatchLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
-	// m.EventDispatchLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	t := float64(d) / float64(time.Millisecond)
+	slog.Info("DispatchLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
@@ -279,8 +282,8 @@ func (m *Metrics) RecordIngestLatency(ev *event.Event) {
 		return
 	}
 	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Microsecond)
-	// m.IngestLatency.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Observe(t)
+	t := float64(d) / float64(time.Millisecond)
+	slog.Info("IngestLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.IngestLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 

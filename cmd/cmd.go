@@ -10,7 +10,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/logger"
 	"github.com/codeasashu/HookRelay/internal/metrics"
@@ -25,19 +25,37 @@ import (
 var g errgroup.Group
 
 func main() {
-	cli.Execute()
+	app := cli.GetAppInstance()
+	app.Logger = slog.Default()
+	c := cli.NewCli(app)
+	_, err := c.Setup()
+	if err != nil {
+		slog.Error("Error: ", "err", err)
+		os.Exit(1)
+	}
+
 	slog.SetDefault(logger.New())
+	Init(app)
 
-	// Init once
-	metrics.GetDPInstance()
-
-	if config.HRConfig.IsQueueWorker() {
+	if app.IsWorker {
 		startWorkerQueueMode()
-	} else if config.HRConfig.IsPubsubWorker() {
-		worker.StartPubsubWorker()
 	} else {
 		startServerMode()
 	}
+}
+
+func Init(app *cli.App) {
+	// Init metrics
+	metrics.GetDPInstance()
+
+	// Init DB
+	// db, err := database.NewPostgreSQLStorage()
+	db, err := database.NewMySQLStorage()
+	if err != nil {
+		slog.Error("error connecting to db", "err", err)
+		os.Exit(1)
+	}
+	app.DB = db
 }
 
 func startWorkerQueueMode() {
@@ -60,7 +78,6 @@ func startWorkerQueueMode() {
 }
 
 func startServerMode() {
-	slog.Info("Staring HookRelay...")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
@@ -69,12 +86,12 @@ func startServerMode() {
 
 	disp := dispatcher.NewDispatcher()
 	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
-	// disp.AddPubsubWorker()
+	disp.AddQueueWorker()
 	// disp.Start()
 
 	apiServer := api.InitApiServer()
 	// Add subscription API
-	subscription.Init()
+	// subscription.Init()
 	subscription.AddRoutes(apiServer)
 
 	// Add prometheus api

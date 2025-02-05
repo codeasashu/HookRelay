@@ -8,16 +8,19 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/gin-gonic/gin"
 )
 
 type ApiServer struct {
+	App    *cli.App
 	Router *gin.Engine
 	server *http.Server
 }
 
 func InitApiServer() *ApiServer {
+	app := cli.GetAppInstance()
 	apiPort := config.HRConfig.Api.Port
 	router := gin.Default()
 	s := &http.Server{
@@ -30,6 +33,7 @@ func InitApiServer() *ApiServer {
 	return &ApiServer{
 		Router: router,
 		server: s,
+		App:    app,
 	}
 }
 
