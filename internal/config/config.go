@@ -13,7 +13,6 @@ const (
 	DefaultConfigDir      = "."
 	defaultConfigTemplate = `# Configuration file for HookRelay
 [listener]
-http.port = 8082
 http.queue_size = 1024
 http.workers = 4
 
@@ -40,7 +39,10 @@ addr = "127.0.0.1:6379"
 db = 0
 concurrency = 10
 
-# postgres DB
+[target]
+max_retries = 2
+
+# postgres DB (Uncomment this to enable postgreSQL)
 # [database]
 # scheme = "postgres"
 # host = "localhost"
@@ -63,7 +65,6 @@ port = 3306
 )
 
 type HttpListenerConfig struct {
-	Port      int `mapstructure:"port"`
 	QueueSize int `mapstructure:"queue_size"`
 	Workers   int `mapstructure:"workers"`
 }
@@ -102,6 +103,10 @@ type LoggingConfig struct {
 	LogFormat string `mapstructure:"log_format"`
 }
 
+type HttpTargetConfig struct {
+	MaxRetries uint16 `mapstructure:"max_retries"`
+}
+
 type Config struct {
 	Listener ListenerConfig `mapstructure:"listener"`
 	Api      ApiConfig      `mapstructure:"api"`
@@ -114,6 +119,9 @@ type Config struct {
 
 	// DB
 	Database DatabaseConfiguration `json:"database" mapstructure:"database"`
+
+	// TargetConfig
+	HttpTarget HttpTargetConfig `json:"http_target" mapstructure:"http_target"`
 }
 
 var HRConfig Config
