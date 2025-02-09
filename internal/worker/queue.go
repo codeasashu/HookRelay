@@ -15,7 +15,10 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-const TypeEventDelivery = "event:deliver"
+const (
+	TypeEventDelivery = "event:deliver"
+	QueueName         = "hookrelay"
+)
 
 type QueueClient struct {
 	ctx    context.Context
@@ -61,7 +64,9 @@ func (c *QueueClient) SendJob(job *Job) error {
 		slog.Error("error creating redis task", "err", err)
 		return err
 	}
-	info, err := c.client.Enqueue(t, asynq.Queue("hookrelay"))
+	info, err := c.client.Enqueue(
+		t, asynq.Queue(QueueName), asynq.MaxRetry(int(job.Subscription.Target.MaxRetries-job.numDeliveries)-1),
+	)
 	if err != nil {
 		slog.Error("could not enqueue task", "err", err)
 		return err
@@ -87,19 +92,14 @@ func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
 	}
 	m.RecordDispatchLatency(j.Event, "asynq")
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
-	// err := processJob(&j)
-	statusCode, err := j.Subscription.Target.ProcessTarget(j.Event.Payload)
-	m.IncrementIngestConsumedTotal(j.Event, "asynq")
-	if err != nil {
-		m.IncrementIngestSuccessTotal(j.Event, "asynq")
-	} else {
-		m.IncrementIngestErrorsTotal(j.Event, "asynq")
-	}
-
-	j.Result = event.NewEventDelivery(j.Event, j.Subscription.ID, statusCode, err)
+	_, err := j.Exec() // Update job result
 	deliveryModel := event.NewEventModel(app.DB)
 	deliveryModel.CreateEventDelivery(j.Result)
-	slog.Info("Finished Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	m.RecordEndToEndLatency(j.Result, "asynq")
+	if err != nil {
+		slog.Error("error processing job", "job_id", j.ID, "error", err)
+		return err
+	}
+	slog.Info("job complete. sending result", "job_id", j.ID)
 	return nil
 }

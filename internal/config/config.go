@@ -39,6 +39,9 @@ addr = "127.0.0.1:6379"
 db = 0
 concurrency = 10
 
+[target]
+max_retries = 2
+
 # postgres DB (Uncomment this to enable postgreSQL)
 # [database]
 # scheme = "postgres"
@@ -100,6 +103,10 @@ type LoggingConfig struct {
 	LogFormat string `mapstructure:"log_format"`
 }
 
+type HttpTargetConfig struct {
+	MaxRetries uint16 `mapstructure:"max_retries"`
+}
+
 type Config struct {
 	Listener ListenerConfig `mapstructure:"listener"`
 	Api      ApiConfig      `mapstructure:"api"`
@@ -112,6 +119,9 @@ type Config struct {
 
 	// DB
 	Database DatabaseConfiguration `json:"database" mapstructure:"database"`
+
+	// TargetConfig
+	HttpTarget HttpTargetConfig `json:"http_target" mapstructure:"http_target"`
 }
 
 var HRConfig Config

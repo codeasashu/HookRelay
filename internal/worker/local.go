@@ -131,14 +131,17 @@ func (w *LocalClient) launchThread() {
 			case job := <-w.JobQueue:
 				slog.Info("got job item", "job_id", job.ID)
 				m.RecordDispatchLatency(job.Event, "local")
-				job.Subscription.Dispatch()
-				statusCode, err := job.Subscription.Target.ProcessTarget(job.Event.Payload)
-				job.Subscription.Complete()
-				slog.Info("job complete. sending result", "job_id", job.ID)
-				job.Result = event.NewEventDelivery(job.Event, job.Subscription.ID, statusCode, err)
-				// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
-				// deliveryModel := event.NewEventModel(app.DB)
-				// deliveryModel.CreateEventDelivery(job.Result)
+				_, err := job.Exec() // Update job result
+				if err != nil {
+					retryErr := job.Retry()
+					if retryErr == ErrTooManyRetry {
+						slog.Error("job failed", "job_id", job.ID, "error", err)
+					} else {
+						slog.Error("error processing job", "job_id", job.ID, "error", err)
+					}
+				} else {
+					slog.Info("job complete. sending result", "job_id", job.ID)
+				}
 				w.resultQueue <- job
 			case <-w.StopChan:
 				return
@@ -162,19 +165,15 @@ func (w *LocalClient) Stop() {
 }
 
 func ProcessResultsFromLocalChan(jobChan <-chan *Job) {
+	// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+	// deliveryModel := event.NewEventModel(app.DB)
+	// deliveryModel.CreateEventDelivery(job.Result)
 	app := cli.GetAppInstance()
 	for job := range jobChan {
 		m.IncrementIngestConsumedTotal(job.Event, "local")
 		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
 		deliveryModel := event.NewEventModel(app.DB)
 		deliveryModel.CreateEventDelivery(job.Result)
-		if job.Result.IsSuccess() {
-			slog.Info("job completed", "job_id", job.ID)
-			m.IncrementIngestSuccessTotal(job.Event, "local")
-		} else {
-			slog.Error("job failed", "job_id", job.ID)
-			m.IncrementIngestErrorsTotal(job.Event, "local")
-		}
 		m.RecordEndToEndLatency(job.Result, "local")
 	}
 }

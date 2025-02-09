@@ -2,6 +2,8 @@ package target
 
 import (
 	"errors"
+
+	"github.com/codeasashu/HookRelay/internal/config"
 )
 
 type (
@@ -21,6 +23,7 @@ type Target struct {
 	Type         TargetType          `json:"type"`
 	HTTPDetails  *HTTPDetails        `json:"http_details,omitempty"`
 	HTTPResponse *HTTPTargetResponse `json:"http_response,omitempty"`
+	MaxRetries   uint16              `json:"max_retries,omitempty"`
 	// WebSocketDetails *WebSocketDetails `json:"websocket_details,omitempty"`
 }
 
@@ -28,12 +31,17 @@ func NewHTTPTarget(url string, method string) (*Target, error) {
 	if url == "" {
 		return nil, errors.New("url is empty")
 	}
+	maxRetries := config.HRConfig.HttpTarget.MaxRetries
+	if maxRetries == 0 {
+		maxRetries = 3
+	}
 	t := &Target{
 		Type: TargetHTTP,
 		HTTPDetails: &HTTPDetails{
 			URL:    url,
 			Method: HTTPMethod(method),
 		},
+		MaxRetries: maxRetries,
 	}
 	return t, nil
 }

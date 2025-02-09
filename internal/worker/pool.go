@@ -33,7 +33,29 @@ func (wp *WorkerPool) AddQueueClient() error {
 	return nil
 }
 
+func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
+	// Checks if jobs should be scheduled to remote worker
+	// based on several criterias
+	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
+	remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
+	slog.Info("schedule login", "isRetrying", job.isRetrying, "localWorkerFull", localWorkerFull, "remoteIsReady", remoteIsReady)
+	return (localWorkerFull && remoteIsReady) || (job.isRetrying && remoteIsReady)
+}
+
 func (wp *WorkerPool) Schedule(job *Job) error {
+	job.wp = wp
+	if wp.ShouldUseRemote(job) {
+		slog.Info("scheduling job to queue worker", "job", job)
+		return wp.queueClient.SendJob(job)
+	}
+	if wp.localClient != nil {
+		slog.Info("scheduling job to local worker", "job", job)
+		return wp.localClient.SendJob(job)
+	}
+	return errors.New("error scheduling job. no worker available")
+}
+
+func (wp *WorkerPool) Retry(job *Job) error {
 	if wp.localClient != nil && !wp.localClient.IsNearlyFull() {
 		slog.Info("scheduling job to local worker", "job", job)
 		return wp.localClient.SendJob(job)
