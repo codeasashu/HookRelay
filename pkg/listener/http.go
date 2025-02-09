@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/gin-gonic/gin"
 )
 
 var m *metrics.Metrics
@@ -21,7 +23,6 @@ type HTTPListener struct {
 	ListenerChan chan event.Event
 	QueueSize    int
 	dispatcher   *dispatcher.Dispatcher
-	server       *http.Server
 }
 
 func (l *HTTPListener) setupWorkers() {
@@ -62,14 +63,28 @@ func (l *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
 	slog.Info("Replied to HTTP Event")
 }
 
-func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
+func (l *HTTPListener) createSubscriptionHandler() gin.HandlerFunc {
+	l.setupWorkers()
+	return func(c *gin.Context) {
+		slog.Info("Received HTTP Event")
+		// i := r.URL.Query().Get("id")
+		e, err := l.transformEvent(c.Request)
+		m.RecordIngestLatency(e)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": err.Error()})
+			return
+		}
+		l.ListenerChan <- *e
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "event received"})
+		slog.Info("Replied to HTTP Event")
+	}
+}
+
+func NewHTTPListener(disp *dispatcher.Dispatcher) *HTTPListener {
 	m = metrics.GetDPInstance()
 	app := cli.GetAppInstance()
 	listener := &HTTPListener{
-		app: app,
-		server: &http.Server{
-			Addr: addr,
-		},
+		app:          app,
 		dispatcher:   disp,
 		QueueSize:    config.HRConfig.Listener.Http.QueueSize,
 		ListenerChan: make(chan event.Event, config.HRConfig.Listener.Http.QueueSize),
@@ -77,16 +92,14 @@ func NewHTTPListener(addr string, disp *dispatcher.Dispatcher) *HTTPListener {
 	return listener
 }
 
-func (l *HTTPListener) StartAndReceive() error {
-	l.setupWorkers()
-	http.HandleFunc("/event", l.handler)
-	slog.Info("http server starting...", "addr", l.server.Addr)
-	return l.server.ListenAndServe()
+func (l *HTTPListener) AddRoutes(server *api.ApiServer) {
+	{
+		v1 := server.Router.Group("/event")
+		v1.POST("", l.createSubscriptionHandler())
+	}
 }
 
 func (l *HTTPListener) Shutdown(ctx context.Context) {
-	slog.Info("http server shutdown...")
-	if err := l.server.Shutdown(ctx); err != nil {
-		slog.Error("HTTP Server forced to shutdown", "err", err)
-	}
+	slog.Info("shutting down HTTP listener...")
+	close(l.ListenerChan)
 }
