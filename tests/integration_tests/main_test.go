@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
+	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/codeasashu/HookRelay/tests/mock"
 )
 
@@ -20,6 +22,7 @@ func TestMain(m *testing.M) {
 	fmt.Println("Starting server...")
 	var wg sync.WaitGroup
 
+	app := cli.GetAppInstance()
 	ms := mock.InitMockHTTPServer(9092)
 	ms.StartFixedDurationServer(1 * time.Millisecond)
 	// cli.Execute()
@@ -30,7 +33,8 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	disp := dispatcher.NewDispatcher()
+	wp := worker.NewWorkerPool(app)
+	disp := dispatcher.NewDispatcher(wp)
 	// benchmark.NewLatencyBench(disp)
 	// disp.Start()
 	ctx, cancel := context.WithCancel(context.Background())

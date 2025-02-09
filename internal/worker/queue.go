@@ -17,15 +17,6 @@ import (
 
 const TypeEventDelivery = "event:deliver"
 
-//	func NewQueue() *asynq.Client {
-//		return asynq.NewClient(asynq.RedisClientOpt{
-//			Addr:     config.HRConfig.QueueWorker.Addr,
-//			DB:       config.HRConfig.QueueWorker.Db,
-//			Password: config.HRConfig.QueueWorker.Password,
-//			Username: config.HRConfig.QueueWorker.Username,
-//		})
-//	}
-
 type QueueClient struct {
 	ctx    context.Context
 	client *asynq.Client
@@ -39,12 +30,28 @@ func NewQueueWorker() *Worker {
 		Username: config.HRConfig.QueueWorker.Username,
 	})
 
+	slog.Info("readying remote queue")
 	return &Worker{
 		ID: ulid.Make().String(),
 		client: &QueueClient{
 			ctx:    context.Background(),
 			client: client,
 		},
+	}
+}
+
+func (c *QueueClient) IsReady() bool {
+	if c.client != nil {
+		if err := c.client.Ping(); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *QueueClient) Close() {
+	if c.client != nil {
+		c.client.Close()
 	}
 }
 
@@ -63,9 +70,6 @@ func (c *QueueClient) SendJob(job *Job) error {
 	return nil
 }
 
-func (c *QueueClient) ReceiveJob(jobChannel chan<- *Job) {
-}
-
 func NewQueueJob(job *Job) (*asynq.Task, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
@@ -81,21 +85,21 @@ func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
 	if err := json.Unmarshal(t.Payload(), &j); err != nil {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
-	m.RecordDispatchLatency(j.Event)
+	m.RecordDispatchLatency(j.Event, "asynq")
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	// err := processJob(&j)
 	statusCode, err := j.Subscription.Target.ProcessTarget(j.Event.Payload)
-	m.IncrementIngestConsumedTotal(j.Event)
+	m.IncrementIngestConsumedTotal(j.Event, "asynq")
 	if err != nil {
-		m.IncrementIngestSuccessTotal(j.Event)
+		m.IncrementIngestSuccessTotal(j.Event, "asynq")
 	} else {
-		m.IncrementIngestErrorsTotal(j.Event)
+		m.IncrementIngestErrorsTotal(j.Event, "asynq")
 	}
 
 	j.Result = event.NewEventDelivery(j.Event, j.Subscription.ID, statusCode, err)
 	deliveryModel := event.NewEventModel(app.DB)
 	deliveryModel.CreateEventDelivery(j.Result)
 	slog.Info("Finished Processing job", "job_id", j.ID, "event_id", j.Event.UID)
-	m.RecordEndToEndLatency(j.Result)
+	m.RecordEndToEndLatency(j.Result, "asynq")
 	return nil
 }
