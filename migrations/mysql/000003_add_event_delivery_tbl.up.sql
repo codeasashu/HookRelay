@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS hookrelay.event_delivery (
     completed_at TIMESTAMP NULL DEFAULT NULL,
 
     -- Foreign key constraints
-    CONSTRAINT fk_event FOREIGN KEY (event_id) REFERENCES hookrelay.event(id) ON DELETE CASCADE,
-    CONSTRAINT fk_subscription FOREIGN KEY (subscription_id) REFERENCES hookrelay.subscription(id) ON DELETE CASCADE
+    CONSTRAINT fk_event FOREIGN KEY (event_id) REFERENCES hookrelay.event(id) ON DELETE CASCADE
 );
 
 -- Optional: Add indexes for faster queries

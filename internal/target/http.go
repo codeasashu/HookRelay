@@ -92,6 +92,7 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	slog.Info("sending HTTP request", "req", req.URL.String())
 	// Send HTTP request
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -113,13 +114,13 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		Code:   resp.StatusCode,
 		Body:   body,
 	}
-	slog.Info("got http reply", "status", resp.Status)
 	if resp.StatusCode != 200 {
 		targetResponse.Status = TargetStatus(StatusErr)
 		slog.Error("invalid http status", "status", resp.Status)
 		return resp.StatusCode, errors.New("Non-200 Status: " + resp.Status)
 	}
 
+	slog.Info("got http reply", "status", resp.Status)
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil
 }

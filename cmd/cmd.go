@@ -14,6 +14,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/logger"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	wrkr "github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
 	"github.com/codeasashu/HookRelay/pkg/worker"
@@ -40,7 +41,7 @@ func main() {
 	if app.IsWorker {
 		startWorkerQueueMode()
 	} else {
-		startServerMode()
+		startServerMode(app)
 	}
 }
 
@@ -77,32 +78,27 @@ func startWorkerQueueMode() {
 	}
 }
 
-func startServerMode() {
+func startServerMode(app *cli.App) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
 	// Always start a local worker per server
-	wrk := worker.StartLocalWorker()
+	wp := wrkr.NewWorkerPool(app)
+	wp.AddQueueClient()
 
-	disp := dispatcher.NewDispatcher()
-	disp.AddLocalWorker(wrk) // Local worker always needs a local worker instance
-	disp.AddQueueWorker()
-	// disp.Start()
+	disp := dispatcher.NewDispatcher(wp)
 
 	apiServer := api.InitApiServer()
-	// Add subscription API
-	// subscription.Init()
+
 	subscription.AddRoutes(apiServer)
+	httpListenerServer := listener.NewHTTPListener(disp)
+	httpListenerServer.AddRoutes(apiServer)
 
 	// Add prometheus api
 	metrics.AddRoutes(apiServer)
 
 	// Finally start api server
 	g.Go(apiServer.Start)
-
-	httpListenerServer := listener.NewHTTPListener(":8082", disp)
-	g.Go(httpListenerServer.StartAndReceive)
-
 	go func() {
 		<-ctx.Done()
 

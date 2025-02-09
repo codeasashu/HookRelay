@@ -59,13 +59,7 @@ func (e *HTTPEventClient) SendEvent(payload interface{}) (*http.Response, error)
 }
 
 func RunHTTPListener(ctx context.Context, wg *sync.WaitGroup, disp *dispatcher.Dispatcher) *listener.HTTPListener {
-	httpListenerServer := listener.NewHTTPListener("localhost:8082", disp)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		httpListenerServer.StartAndReceive()
-	}()
-
+	httpListenerServer := listener.NewHTTPListener(disp)
 	return httpListenerServer
 }
 
