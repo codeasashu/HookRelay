@@ -135,7 +135,7 @@ func (w *LocalClient) launchThread() {
 				if err != nil {
 					retryErr := job.Retry()
 					if retryErr == ErrTooManyRetry {
-						slog.Error("job failed", "job_id", job.ID, "error", err)
+						slog.Error("job failed. Retry exhausted", "job_id", job.ID, "error", err)
 					} else {
 						slog.Error("error processing job", "job_id", job.ID, "error", err)
 					}

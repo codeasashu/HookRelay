@@ -55,11 +55,8 @@ export function setup() {
       owner_id: OWNER_IDS[0],
       event_types: EVENT_TYPES, // Make this variable lateron
       target: {
-        type: "http",
-        http_details: {
-          url: "https://httpbin.org/post",
-          method: "POST",
-        },
+        url: "https://httpbin.org/post",
+        method: "POST",
       },
     };
 

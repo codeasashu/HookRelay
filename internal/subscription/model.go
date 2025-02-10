@@ -71,13 +71,25 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 		return err
 	}
 
+	headers, err := json.Marshal(s.Target.HTTPDetails.Headers)
+	if err != nil {
+		slog.Error("failed to marshal subscription event types", "err", err)
+		return err
+	}
+
+	auth, err := json.Marshal(s.Target.HTTPDetails.BasicAuth)
+	if err != nil {
+		slog.Error("failed to marshal subscription event types", "err", err)
+		return err
+	}
+
 	args := map[string]interface{}{
 		"id":            s.ID,
 		"owner_id":      s.OwnerId,
 		"target_url":    s.Target.HTTPDetails.URL,
 		"target_method": s.Target.HTTPDetails.Method,
-		"target_params": "[]",
-		"target_auth":   "{}",
+		"target_params": headers,
+		"target_auth":   auth,
 		"event_types":   eventTypes,
 		"status":        int(SubscriptionActive),
 		"filters":       "[]",
@@ -184,20 +196,39 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 		var s Subscription
 		var targetURL sql.NullString
 		var targetMethod sql.NullString
-		var targetParams, targetAuth []byte
-		var eventTypes, filters, tags []byte
+		var targetParamsBytes, targetAuthBytes, eventTypes, filters, tags []byte
 
 		err := rows.Scan(
-			&s.ID, &s.OwnerId, &targetURL, &targetMethod, &targetParams, &targetAuth,
+			&s.ID, &s.OwnerId, &targetURL, &targetMethod, &targetParamsBytes, &targetAuthBytes,
 			&eventTypes, &s.Status, &filters, &tags, &s.CreatedAt, &s.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscription: %v", err)
 		}
 
+		var targetParams map[string]string
+		if len(targetParamsBytes) > 0 {
+			if err := json.Unmarshal(targetParamsBytes, &targetParams); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal target_params: %v", err)
+			}
+		}
+
+		// Unmarshal target_auth (assuming it's also JSON)
+		var targetAuth target.HTTPBasicAuth
+		if len(targetAuthBytes) > 0 {
+			if err := json.Unmarshal(targetAuthBytes, &targetAuth); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal target_auth: %v", err)
+			}
+		}
+
 		// Map target_url to Subscription.Target.HTTPDetails.URL
 		if targetURL.Valid {
-			_target, err := target.NewHTTPTarget(targetURL.String, targetMethod.String)
+			_target, err := target.NewHTTPTarget(
+				targetURL.String,
+				targetMethod.String,
+				targetParams,
+				targetAuth,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create target: %v", err)
 			}

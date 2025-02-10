@@ -37,8 +37,8 @@ func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
 	// Checks if jobs should be scheduled to remote worker
 	// based on several criterias
 	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
-	remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
-	slog.Info("schedule login", "isRetrying", job.isRetrying, "localWorkerFull", localWorkerFull, "remoteIsReady", remoteIsReady)
+	remoteIsReady := wp.queueClient != nil
+	// remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
 	return (localWorkerFull && remoteIsReady) || (job.isRetrying && remoteIsReady)
 }
 

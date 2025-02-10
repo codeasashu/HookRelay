@@ -23,6 +23,11 @@ const (
 	// TargetWebSocket TargetType = "websocket"
 )
 
+type HTTPBasicAuth struct {
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 type HTTPTargetResponse struct {
 	Status TargetStatus `json:"status"`
 	Code   int          `json:"code"`
@@ -30,23 +35,34 @@ type HTTPTargetResponse struct {
 }
 
 type HTTPDetails struct {
-	URL     string            `json:"url" binding:"required"` // Endpoint URL
-	Headers map[string]string `json:"headers,omitempty"`      // Custom headers
-	Method  HTTPMethod        `json:"method"`                 // HTTP method (e.g., "GET", "POST")
+	URL       string            `json:"url" binding:"required"` // Endpoint URL
+	Headers   map[string]string `json:"headers,omitempty"`      // Custom headers
+	Method    HTTPMethod        `json:"method"`                 // HTTP method (e.g., "GET", "POST")
+	BasicAuth HTTPBasicAuth     `json:"auth,omitempty"`         // Basic Auth Username
 }
 
-//	func Run(t *Target) (string, error) {
-//		if t == nil {
-//			return "", errors.New("target is nil")
-//		}
-//		if t.Type == TargetHTTP {
-//			if t.HTTPDetails == nil {
-//				return "", errors.New("HTTP details are nil")
-//			}
-//			return genSHA(t.HTTPDetails.URL)
-//		}
-//		return "", errors.New("target type is invalid")
-//	}
+func (t *Target) SetAuth(req *http.Request) *http.Request {
+	// Add Basic Authentication if credentials are present
+	if t.HTTPDetails.BasicAuth.Username != "" && t.HTTPDetails.BasicAuth.Password != "" {
+		req.SetBasicAuth(t.HTTPDetails.BasicAuth.Username, t.HTTPDetails.BasicAuth.Password)
+		slog.Info("using basic authentication", "user", t.HTTPDetails.BasicAuth.Username)
+	}
+	return req
+}
+
+func (t *Target) SetHeaders(req *http.Request) *http.Request {
+	for key, value := range t.HTTPDetails.Headers {
+		req.Header.Set(key, value)
+	}
+
+	// Set default content-type if not provided
+	if _, ok := t.HTTPDetails.Headers["Content-Type"]; !ok {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	return req
+}
+
 func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 	if target.Type != TargetHTTP {
 		slog.Error("unsupported target type", "type", target.Type)
@@ -82,15 +98,9 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		slog.Error("failed to create HTTP request", "err", err)
 		return 0, err
 	}
-	// Add headers
-	for key, value := range target.HTTPDetails.Headers {
-		req.Header.Set(key, value)
-	}
 
-	// Set default content-type if not provided
-	if _, ok := target.HTTPDetails.Headers["Content-Type"]; !ok {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req = target.SetHeaders(req)
+	req = target.SetAuth(req)
 
 	slog.Info("sending HTTP request", "req", req.URL.String())
 	// Send HTTP request
@@ -121,6 +131,7 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 	}
 
 	slog.Info("got http reply", "status", resp.Status)
+	slog.Debug("got http response body", "body", string(body))
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil
 }

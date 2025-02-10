@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: Hook Relay
+  version: 1.0.0
+  license:
+    name: MIT
+    url: "https://opensource.org/license/mit/"
+servers:
+  - url: "https://localhost:8081"
+security:
+  - PlaceholderAuth: []
+paths:
+  /subscriptions:
+    post:
+      summary: Create a new subscription
+      operationId: createSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Subscription"
+            examples:
+              BasicSubscriptionPayload:
+                $ref: "#/components/examples/BasicSubscriptionPayload"
+              CompleteSubscriptionPayload:
+                $ref: "#/components/examples/CompleteSubscriptionPayload"
+              SubsribeToAllEvents:
+                $ref: "#/components/examples/SubsribeToAllEvents"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - "success"
+                    example: "success"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "subscription already exists"
+                  status:
+                    type: string
+                    enum:
+                      - "error"
+                    example: "error"
+components:
+  schemas:
+    Subscription:
+      type: object
+      required:
+        - owner_id
+        - event_types
+        - target
+      properties:
+        owner_id:
+          type: string
+          example: "owner_123"
+        event_types:
+          type: array
+          items:
+            type: string
+            example: "owner_123"
+        target:
+          type: object
+          required:
+            - url
+            - method
+          properties:
+            url:
+              type: string
+              example: https://httpbin.org/post
+            method:
+              type: string
+              example: POST
+            auth:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: "admin"
+                password:
+                  type: string
+                  example: "12345678"
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+  examples:
+    BasicSubscriptionPayload:
+      summary: "Basic Subscription Payload"
+      value:
+        owner_id: "owner789"
+        event_types: ["call.incall", "call.disposition"]
+        target:
+          url: "https://httpbin.org/post"
+          method: "POST"
+    SubsribeToAllEvents:
+      summary: "Subscribe to all events"
+      value:
+        owner_id: "owner789"
+        event_types: ["*"]
+        target:
+          url: "https://httpbin.org/post"
+          method: "POST"
+          type: "http"
+    CompleteSubscriptionPayload:
+      summary: "Complete Subscription Payload"
+      value:
+        owner_id: "owner789"
+        event_types: ["call.incall", "chat.waba"]
+        target:
+          url: "https://httpbin.org/post"
+          method: "POST"
+          headers:
+            ContentType: "application/json"
+            X-Custom: "CustomValue"
+          auth:
+            username: "username"
+            password: "password"
+
+  securitySchemes:
+    PlaceholderAuth:
+      type: apiKey
+      in: header
+      name: Placeholder

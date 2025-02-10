@@ -27,7 +27,7 @@ type Target struct {
 	// WebSocketDetails *WebSocketDetails `json:"websocket_details,omitempty"`
 }
 
-func NewHTTPTarget(url string, method string) (*Target, error) {
+func NewHTTPTarget(url string, method string, headers map[string]string, basicAuth HTTPBasicAuth) (*Target, error) {
 	if url == "" {
 		return nil, errors.New("url is empty")
 	}
@@ -38,8 +38,10 @@ func NewHTTPTarget(url string, method string) (*Target, error) {
 	t := &Target{
 		Type: TargetHTTP,
 		HTTPDetails: &HTTPDetails{
-			URL:    url,
-			Method: HTTPMethod(method),
+			URL:       url,
+			Method:    HTTPMethod(method),
+			Headers:   headers,
+			BasicAuth: basicAuth,
 		},
 		MaxRetries: maxRetries,
 	}

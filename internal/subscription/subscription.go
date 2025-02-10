@@ -19,7 +19,7 @@ type Subscription struct {
 	// lock    *sync.RWMutex
 	ID         string
 	OwnerId    string         `json:"owner_id" binding:"required" db:"owner_id"`
-	Target     *target.Target `json:"target" binding:"required"`
+	Target     *target.Target `json:"target"`
 	EventTypes []string       `json:"event_types"`
 	Tags       []string       `json:"tags"`
 
@@ -28,6 +28,11 @@ type Subscription struct {
 	StartedAt    time.Time
 	DispatchedAt time.Time
 	CompleteAt   time.Time
+}
+
+type ReadSubscription struct {
+	Target *target.HTTPDetails `json:"target" binding:"required"`
+	*Subscription
 }
 
 func (e *Subscription) Dispatch() {
@@ -51,21 +56,9 @@ func genSHA(str string) (string, error) {
 	return sha1_hash, nil
 }
 
-func GetID(owner string, t *target.Target) (string, error) {
-	if t == nil {
-		return "", errors.New("subscription is nil")
-	}
-	if t.Type == target.TargetHTTP {
-		if t.HTTPDetails == nil {
-			return "", errors.New("HTTP details are nil")
-		}
-		return genSHA(owner + ":" + t.HTTPDetails.URL)
-	}
-	return "", errors.New("target type is invalid")
-}
+func (s *ReadSubscription) UnmarshalJSON(data []byte) error {
+	type Alias ReadSubscription
 
-func (s *Subscription) UnmarshalJSON(data []byte) error {
-	type Alias Subscription
 	temp := &struct {
 		*Alias
 	}{
@@ -75,7 +68,12 @@ func (s *Subscription) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, temp); err != nil {
 		return err
 	}
-	iid, err := GetID(temp.OwnerId, temp.Target)
+
+	if temp.OwnerId == "" {
+		return errors.New("owner_id is required")
+	}
+
+	iid, err := genSHA(temp.OwnerId + ":" + temp.Target.URL)
 	if err != nil {
 		slog.Error("failed to get target id", "err", err)
 		return err
@@ -84,7 +82,6 @@ func (s *Subscription) UnmarshalJSON(data []byte) error {
 	if len(temp.EventTypes) == 0 {
 		temp.EventTypes = []string{"*"} // subscribe to all events
 	}
-	// temp.lock = &sync.RWMutex{}
 	temp.CreatedAt = time.Now()
 	return nil
 }

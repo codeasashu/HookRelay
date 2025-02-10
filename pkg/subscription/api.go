@@ -6,6 +6,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/subscription"
+	"github.com/codeasashu/HookRelay/internal/target"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,14 +19,29 @@ func AddRoutes(server *api.ApiServer) {
 
 func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cs *subscription.Subscription
+		var cs *subscription.ReadSubscription
 		if err := c.ShouldBindJSON(&cs); err != nil {
 			c.JSON(400, gin.H{"status": "error", "error": err.Error()})
 			return
 		}
 
+		s := &subscription.Subscription{
+			ID:      cs.ID,
+			OwnerId: cs.OwnerId,
+			Target: &target.Target{
+				Type:        target.TargetType(target.TargetHTTP),
+				HTTPDetails: cs.Target,
+			},
+			EventTypes:   cs.EventTypes,
+			Tags:         cs.Tags,
+			Status:       cs.Status,
+			CreatedAt:    cs.CreatedAt,
+			StartedAt:    cs.StartedAt,
+			DispatchedAt: cs.DispatchedAt,
+			CompleteAt:   cs.CompleteAt,
+		}
 		model := subscription.NewSubscriptionModel(app.DB)
-		err := model.CreateSubscription(cs)
+		err := model.CreateSubscription(s)
 		if err != nil {
 			switch err {
 			case subscription.ErrSubscriptionExists:
