@@ -16,28 +16,16 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var (
-	w    *WALSQLite
-	once sync.Once
-)
-
 type WALSQLite struct {
 	logDir string
 	curDB  *sql.DB
 	mu     sync.Mutex
 }
 
-func NewSQLiteWAL(logDir string) *WALSQLite {
+func NewSQLiteWAL() *WALSQLite {
 	return &WALSQLite{
-		logDir: logDir,
+		logDir: config.HRConfig.WalConfig.Path,
 	}
-}
-
-func GetWALInstance() *WALSQLite {
-	once.Do(func() {
-		w = NewSQLiteWAL(config.HRConfig.Logging.LogFormat)
-	})
-	return w
 }
 
 func (w *WALSQLite) Init(t time.Time) error {

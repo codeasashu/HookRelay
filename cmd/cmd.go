@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -55,7 +54,7 @@ func Init(app *cli.App) {
 	// Init metrics
 	metrics.GetDPInstance()
 
-	wl = wal.NewSQLiteWAL(".")
+	wl = wal.NewSQLiteWAL()
 	if err := wl.Init(time.Now()); err != nil {
 		slog.Error("could not initialize WAL", slog.Any("error", err))
 		os.Exit(1)
@@ -104,7 +103,6 @@ func startServerMode(app *cli.App) {
 
 	apiServer := api.InitApiServer()
 
-	fmt.Printf("WAL in main", wl)
 	subscription.AddRoutes(apiServer)
 	httpListenerServer := listener.NewHTTPListener(disp, wl)
 	httpListenerServer.AddRoutes(apiServer)

@@ -61,6 +61,9 @@ password = "admin"
 database = "hookrelay"
 options = "tls-insecure-skip-verify=false&connect_timeout=30"
 port = 3306
+
+[wal]
+path = "/tmp/hookrelay.wal"
 `
 )
 
@@ -103,15 +106,20 @@ type LoggingConfig struct {
 	LogFormat string `mapstructure:"log_format"`
 }
 
+type WALConfig struct {
+	Path string `mapstructure:"path"`
+}
+
 type HttpTargetConfig struct {
 	MaxRetries uint16 `mapstructure:"max_retries"`
 }
 
 type Config struct {
-	Listener ListenerConfig `mapstructure:"listener"`
-	Api      ApiConfig      `mapstructure:"api"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
+	Listener  ListenerConfig `mapstructure:"listener"`
+	Api       ApiConfig      `mapstructure:"api"`
+	Metrics   MetricsConfig  `mapstructure:"metrics"`
+	Logging   LoggingConfig  `mapstructure:"logging"`
+	WalConfig WALConfig      `mapstructure:"wal"`
 
 	// Worker
 	LocalWorker LocalWorkerConfig `mapstructure:"local_worker"`
