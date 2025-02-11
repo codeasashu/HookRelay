@@ -291,7 +291,6 @@ func (m *Metrics) IncrementIngestSuccessTotal(ev *event.Event, wrkr string) {
 	if !m.IsEnabled {
 		return
 	}
-	// m.IngestSuccessTotal.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType, listenerLabel: "http"}).Inc()
 	m.IngestSuccessTotal.With(prometheus.Labels{eventTypeLabel: ev.EventType, listenerLabel: "http", workerLabel: wrkr}).Inc()
 }
 
@@ -313,7 +312,6 @@ func (m *Metrics) RecordFanout(ev *event.Event, size int) {
 	if !m.IsEnabled {
 		return
 	}
-	// m.FanoutSize.With(prometheus.Labels{eventLabel: ev.UID, eventTypeLabel: ev.EventType}).Observe(float64(size))
 	m.FanoutSize.With(prometheus.Labels{eventTypeLabel: ev.EventType}).Observe(float64(size))
 }
 

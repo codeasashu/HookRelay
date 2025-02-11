@@ -2,8 +2,6 @@ package event
 
 import (
 	"time"
-
-	"github.com/oklog/ulid/v2"
 )
 
 type (
@@ -21,8 +19,8 @@ const (
 )
 
 type EventDelivery struct {
-	ID             string    `json:"id,omitempty" db:"id"`
-	EventID        string    `json:"event_id,omitempty" db:"event_id"`
+	ID             int64     `json:"id,omitempty" db:"id"`
+	EventID        int64     `json:"event_id,omitempty" db:"event_id"`
 	OwnerId        string    `json:"owner_id"`
 	SubscriptionId string    `json:"subscription_id" db:"subscription_id"`
 	StartedAt      time.Time `json:"started_at" db:"started_at"`
@@ -34,7 +32,6 @@ type EventDelivery struct {
 
 func NewEventDelivery(e *Event, subscription_id string, statusCode int, err error) *EventDelivery {
 	delivery := &EventDelivery{
-		ID:             ulid.Make().String(),
 		EventID:        e.UID,
 		OwnerId:        e.OwnerId,
 		StartedAt:      e.AcknowledgedAt,

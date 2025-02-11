@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
-	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/hibiken/asynq"
 
 	"github.com/oklog/ulid/v2"
@@ -84,17 +83,16 @@ func NewQueueJob(job *Job) (*asynq.Task, error) {
 }
 
 func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
-	app := cli.GetAppInstance()
 	var j Job
 	m := ctx.Value(metrics.MetricsContextKey).(*metrics.Metrics)
+	wl := ctx.Value(wal.WorkerContextKey).(wal.AbstractWAL)
 	if err := json.Unmarshal(t.Payload(), &j); err != nil {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
 	m.RecordDispatchLatency(j.Event, "asynq")
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	_, err := j.Exec() // Update job result
-	deliveryModel := event.NewEventModel(app.DB)
-	deliveryModel.CreateEventDelivery(j.Result)
+	wl.LogEventDelivery(j.Result)
 	m.RecordEndToEndLatency(j.Result, "asynq")
 	if err != nil {
 		slog.Error("error processing job", "job_id", j.ID, "error", err)

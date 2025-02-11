@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
@@ -14,6 +16,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/logger"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/wal"
 	wrkr "github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
@@ -23,7 +26,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var g errgroup.Group
+var (
+	g  errgroup.Group
+	wl wal.AbstractWAL
+)
 
 func main() {
 	app := cli.GetAppInstance()
@@ -49,6 +55,14 @@ func Init(app *cli.App) {
 	// Init metrics
 	metrics.GetDPInstance()
 
+	wl = wal.NewSQLiteWAL(".")
+	if err := wl.Init(time.Now()); err != nil {
+		slog.Error("could not initialize WAL", slog.Any("error", err))
+		os.Exit(1)
+	} else {
+		go wal.InitBG(wl)
+	}
+
 	// Init DB
 	// db, err := database.NewPostgreSQLStorage()
 	db, err := database.NewMySQLStorage()
@@ -63,7 +77,7 @@ func startWorkerQueueMode() {
 	slog.Info("staring queue worker")
 	sigs := make(chan os.Signal, 1)
 	metricsSrv := worker.StartMetricsServer()
-	srv := worker.StartQueueWorker(sigs)
+	srv := worker.StartQueueWorker(sigs, wl)
 
 	// Wait for termination signal.
 	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT)
@@ -83,15 +97,16 @@ func startServerMode(app *cli.App) {
 	defer stop()
 
 	// Always start a local worker per server
-	wp := wrkr.NewWorkerPool(app)
+	wp := wrkr.NewWorkerPool(app, wl)
 	wp.AddQueueClient()
 
 	disp := dispatcher.NewDispatcher(wp)
 
 	apiServer := api.InitApiServer()
 
+	fmt.Printf("WAL in main", wl)
 	subscription.AddRoutes(apiServer)
-	httpListenerServer := listener.NewHTTPListener(disp)
+	httpListenerServer := listener.NewHTTPListener(disp, wl)
 	httpListenerServer.AddRoutes(apiServer)
 
 	// Add prometheus api

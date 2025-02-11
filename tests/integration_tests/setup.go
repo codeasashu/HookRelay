@@ -59,7 +59,7 @@ func (e *HTTPEventClient) SendEvent(payload interface{}) (*http.Response, error)
 }
 
 func RunHTTPListener(ctx context.Context, wg *sync.WaitGroup, disp *dispatcher.Dispatcher) *listener.HTTPListener {
-	httpListenerServer := listener.NewHTTPListener(disp)
+	httpListenerServer := listener.NewHTTPListener(disp, nil)
 	return httpListenerServer
 }
 
