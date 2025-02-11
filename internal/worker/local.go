@@ -9,6 +9,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/oklog/ulid/v2"
@@ -165,13 +166,48 @@ func (w *LocalClient) Stop() {
 }
 
 func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
-	// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
-	// deliveryModel := event.NewEventModel(app.DB)
-	// deliveryModel.CreateEventDelivery(job.Result)
-	for job := range jobChan {
-		m.IncrementIngestConsumedTotal(job.Event, "local")
-		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
-		wl.LogEventDelivery(job.Result)
-		m.RecordEndToEndLatency(job.Result, "local")
+	const batchSize = 100
+	const flushInterval = 500 * time.Millisecond
+
+	var batch []*event.EventDelivery
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case job, ok := <-jobChan:
+			if !ok {
+				// Channel closed, flush remaining events
+				if len(batch) > 0 {
+					wl.LogBatchEventDelivery(batch)
+				}
+				return
+			}
+
+			m.IncrementIngestConsumedTotal(job.Event, "local")
+			batch = append(batch, job.Result)
+
+			if len(batch) >= batchSize {
+				wl.LogBatchEventDelivery(batch)
+				batch = nil // Reset batch
+			}
+		case <-ticker.C:
+			if len(batch) > 0 {
+				wl.LogBatchEventDelivery(batch)
+				batch = nil // Reset batch
+			}
+		}
 	}
 }
+
+// func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
+// 	// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+// 	// deliveryModel := event.NewEventModel(app.DB)
+// 	// deliveryModel.CreateEventDelivery(job.Result)
+// 	for job := range jobChan {
+// 		m.IncrementIngestConsumedTotal(job.Event, "local")
+// 		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
+// 		wl.LogEventDelivery(job.Result)
+// 		m.RecordEndToEndLatency(job.Result, "local")
+// 	}
+// }

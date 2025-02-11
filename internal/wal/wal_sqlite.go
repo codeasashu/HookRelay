@@ -118,6 +118,46 @@ func (w *WALSQLite) LogEventDelivery(e *event.EventDelivery) error {
 	return nil
 }
 
+func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	tx, err := w.curDB.Begin()
+	if err != nil {
+		slog.Error("failed to start transaction for batch event logging", slog.Any("error", err))
+		return err
+	}
+
+	stmt, err := tx.Prepare("INSERT INTO wal_event_deliveries (event_id, owner_id, subscription_id, status_code, error, latency) VALUES (?,?,?,?,?,?)")
+	if err != nil {
+		slog.Error("failed to prepare statement for batch event logging", slog.Any("error", err))
+		_ = tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	for _, e := range events {
+		_, err := stmt.Exec(e.EventID, e.OwnerId, e.SubscriptionId, e.StatusCode, e.Error, e.Latency)
+		if err != nil {
+			slog.Error("failed to log event in batch WAL insert", slog.Any("error", err))
+			_ = tx.Rollback()
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Error("failed to commit batch WAL insert", slog.Any("error", err))
+		return err
+	}
+
+	slog.Debug("batch logged events in WAL", "count", len(events))
+	return nil
+}
+
 func (w *WALSQLite) Close() error {
 	return w.curDB.Close()
 }

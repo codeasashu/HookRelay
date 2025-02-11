@@ -18,6 +18,7 @@ const (
 type AbstractWAL interface {
 	LogEvent(e *event.Event) error
 	LogEventDelivery(e *event.EventDelivery) error
+	LogBatchEventDelivery(events []*event.EventDelivery) error
 	Close() error
 	Init(t time.Time) error
 	ForEachEvent(f func(e event.Event) error) error
