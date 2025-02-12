@@ -8,6 +8,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/hibiken/asynq"
 	"golang.org/x/sys/unix"
@@ -18,6 +19,15 @@ func metricsWrapper() func(asynq.Handler) asynq.Handler {
 	return func(next asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 			newctx := context.WithValue(ctx, metrics.MetricsContextKey, mw)
+			return next.ProcessTask(newctx, t)
+		})
+	}
+}
+
+func walWrapper(wl wal.AbstractWAL) func(asynq.Handler) asynq.Handler {
+	return func(next asynq.Handler) asynq.Handler {
+		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+			newctx := context.WithValue(ctx, wal.WorkerContextKey, wl)
 			return next.ProcessTask(newctx, t)
 		})
 	}
@@ -42,7 +52,7 @@ func StartMetricsServer() *http.Server {
 	return metricsSrv
 }
 
-func StartQueueWorker(sigs chan os.Signal) *asynq.Server {
+func StartQueueWorker(sigs chan os.Signal, wl wal.AbstractWAL) *asynq.Server {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
 			Addr:     config.HRConfig.QueueWorker.Addr,
@@ -60,6 +70,7 @@ func StartQueueWorker(sigs chan os.Signal) *asynq.Server {
 
 	mux := asynq.NewServeMux()
 	mux.Use(metricsWrapper())
+	mux.Use(walWrapper(wl))
 	mux.HandleFunc(worker.TypeEventDelivery, worker.HandleQueueJob)
 
 	// Start worker server.

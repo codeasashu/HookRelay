@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/cli"
+	"github.com/codeasashu/HookRelay/internal/wal"
 )
 
 // @TODO: Make this a linked list to support multiple workers
@@ -13,9 +14,9 @@ type WorkerPool struct {
 	queueClient *QueueClient
 }
 
-func NewWorkerPool(app *cli.App) *WorkerPool {
+func NewWorkerPool(app *cli.App, wl wal.AbstractWAL) *WorkerPool {
 	// Pool always starts with localWorker
-	localWorker := NewLocalWorker(app)
+	localWorker := NewLocalWorker(app, wl)
 	w := &WorkerPool{
 		localClient: localWorker.client.(*LocalClient),
 	}

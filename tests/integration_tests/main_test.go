@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	wp := worker.NewWorkerPool(app)
+	wp := worker.NewWorkerPool(app, nil)
 	disp := dispatcher.NewDispatcher(wp)
 	// benchmark.NewLatencyBench(disp)
 	// disp.Start()

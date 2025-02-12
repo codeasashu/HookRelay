@@ -2,6 +2,8 @@ package dispatcher
 
 import (
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,7 +56,7 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 		for _, sub := range subscriptions {
 			sub.StartedAt = time.Now()
 			job := &worker.Job{
-				ID:           event.UID + "-" + sub.ID,
+				ID:           strconv.Itoa(int(event.UID)) + "_" + strings.ToLower(event.EventType),
 				Event:        &event,
 				Subscription: &sub,
 			}

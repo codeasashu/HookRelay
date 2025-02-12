@@ -28,3 +28,4 @@ chatgpt/
 
 config.toml
 *.config.toml
+*.sqlite*

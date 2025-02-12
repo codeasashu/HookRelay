@@ -13,6 +13,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +24,7 @@ type HTTPListener struct {
 	ListenerChan chan event.Event
 	QueueSize    int
 	dispatcher   *dispatcher.Dispatcher
+	wl           wal.AbstractWAL
 }
 
 func (l *HTTPListener) setupWorkers() {
@@ -42,7 +44,7 @@ func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
 	}
 	m.IncrementIngestTotal()
 	event.Ack()
-	event.Save(l.app)
+	l.wl.LogEvent(event)
 	slog.Info("Acknowledge evnet", "id", event.UID, "type", event.EventType)
 	return event, nil
 }
@@ -80,7 +82,7 @@ func (l *HTTPListener) createSubscriptionHandler() gin.HandlerFunc {
 	}
 }
 
-func NewHTTPListener(disp *dispatcher.Dispatcher) *HTTPListener {
+func NewHTTPListener(disp *dispatcher.Dispatcher, wl wal.AbstractWAL) *HTTPListener {
 	m = metrics.GetDPInstance()
 	app := cli.GetAppInstance()
 	listener := &HTTPListener{
@@ -88,6 +90,7 @@ func NewHTTPListener(disp *dispatcher.Dispatcher) *HTTPListener {
 		dispatcher:   disp,
 		QueueSize:    config.HRConfig.Listener.Http.QueueSize,
 		ListenerChan: make(chan event.Event, config.HRConfig.Listener.Http.QueueSize),
+		wl:           wl,
 	}
 	return listener
 }
