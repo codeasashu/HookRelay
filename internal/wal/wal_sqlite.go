@@ -34,7 +34,7 @@ func (w *WALSQLite) Init(t time.Time) error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	timestamp := t.Format("20060102")
+	timestamp := t.Format(config.HRConfig.WalConfig.Format)
 	path := filepath.Join(w.logDir, fmt.Sprintf("wal_%s.sqlite3", timestamp))
 
 	db, err := sql.Open("sqlite3", path)
@@ -184,8 +184,8 @@ func (w *WALSQLite) ForEachEvent(f func(c event.Event) error) error {
 	sort.Slice(walFiles, func(i, j int) bool {
 		timestampStrI := walFiles[i].Name()[4:17]
 		timestampStrJ := walFiles[j].Name()[4:17]
-		timestampI, errI := time.Parse("20060102_1504", timestampStrI)
-		timestampJ, errJ := time.Parse("20060102_1504", timestampStrJ)
+		timestampI, errI := time.Parse(config.HRConfig.WalConfig.Format, timestampStrI)
+		timestampJ, errJ := time.Parse(config.HRConfig.WalConfig.Format, timestampStrJ)
 		if errI != nil || errJ != nil {
 			return false
 		}

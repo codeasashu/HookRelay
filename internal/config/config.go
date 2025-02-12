@@ -64,6 +64,7 @@ port = 3306
 
 [wal]
 path = "/tmp/hookrelay.wal"
+format = "20060102_1504"  # second level timestamp 
 `
 )
 
@@ -107,7 +108,8 @@ type LoggingConfig struct {
 }
 
 type WALConfig struct {
-	Path string `mapstructure:"path"`
+	Path   string `mapstructure:"path"`
+	Format string `mapstructure:"format"`
 }
 
 type HttpTargetConfig struct {
