@@ -52,19 +52,27 @@ max_retries = 2
 # options = "tls-insecure-skip-verify=false&connect_timeout=30"
 # port = 5432
 
-# Mysql DB
-[database]
-scheme = "mysql"
-host = "localhost"
-username = "admin"
-password = "admin"
-database = "hookrelay"
-options = "tls-insecure-skip-verify=false&connect_timeout=30"
-port = 3306
-
 [wal]
 path = "/tmp/hookrelay.wal"
 format = "20060102_1504"  # second level timestamp 
+
+[subscription]
+db.scheme = "mysql"
+db.host = "localhost"
+db.username = "admin"
+db.password = "admin"
+db.database = "hookrelay"
+db.options = "tls-insecure-skip-verify=false&connect_timeout=30"
+db.port = 3306
+
+[delivery]
+db.scheme = "mysql"
+db.host = "localhost"
+db.username = "admin"
+db.password = "admin"
+db.database = "hookrelay"
+db.options = "tls-insecure-skip-verify=false&connect_timeout=30"
+db.port = 3306
 `
 )
 
@@ -116,6 +124,14 @@ type HttpTargetConfig struct {
 	MaxRetries uint16 `mapstructure:"max_retries"`
 }
 
+type SubscriptionConfig struct {
+	Database DatabaseConfiguration `mapstructure:"db"`
+}
+
+type DeliveryConfig struct {
+	Database DatabaseConfiguration `mapstructure:"db"`
+}
+
 type Config struct {
 	Listener  ListenerConfig `mapstructure:"listener"`
 	Api       ApiConfig      `mapstructure:"api"`
@@ -123,12 +139,13 @@ type Config struct {
 	Logging   LoggingConfig  `mapstructure:"logging"`
 	WalConfig WALConfig      `mapstructure:"wal"`
 
+	// Subscription
+	Subscription SubscriptionConfig `mapstructure:"subscription"`
+	Delivery     DeliveryConfig     `mapstructure:"delivery"`
+
 	// Worker
 	LocalWorker LocalWorkerConfig `mapstructure:"local_worker"`
 	QueueWorker QueueWorkerConfig `mapstructure:"queue_worker"`
-
-	// DB
-	Database DatabaseConfiguration `json:"database" mapstructure:"database"`
 
 	// TargetConfig
 	HttpTarget HttpTargetConfig `json:"http_target" mapstructure:"http_target"`

@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
+	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/dispatcher"
 	"github.com/codeasashu/HookRelay/internal/logger"
@@ -26,8 +27,9 @@ import (
 )
 
 var (
-	g  errgroup.Group
-	wl wal.AbstractWAL
+	g    errgroup.Group
+	wl   wal.AbstractWAL
+	sigs chan os.Signal
 )
 
 func main() {
@@ -51,37 +53,43 @@ func main() {
 }
 
 func Init(app *cli.App) {
+	sigs = make(chan os.Signal, 1)
+	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT, unix.SIGHUP)
 	// Init metrics
 	metrics.GetDPInstance()
-
-	wl = wal.NewSQLiteWAL()
-	if err := wl.Init(time.Now()); err != nil {
-		slog.Error("could not initialize WAL", slog.Any("error", err))
-		os.Exit(1)
-	} else {
-		go wal.InitBG(wl)
-	}
-
-	// Init DB
+	// Init Remote DB
 	// db, err := database.NewPostgreSQLStorage()
-	db, err := database.NewMySQLStorage()
+	db, err := database.NewMySQLStorage(config.HRConfig.Subscription.Database)
 	if err != nil {
 		slog.Error("error connecting to db", "err", err)
 		os.Exit(1)
 	}
 	app.DB = db
+
+	// Delivery DB
+	deliveryDb, err := database.NewMySQLStorage(config.HRConfig.Delivery.Database)
+	if err != nil {
+		slog.Warn("error connecting to delivery db, accounting will not work", "err", err)
+	}
+	acc := wal.NewAccounting(deliveryDb)
+	wl = wal.NewSQLiteWAL(acc)
+	if err := wl.Init(time.Now()); err != nil {
+		slog.Error("could not initialize WAL", slog.Any("error", err))
+		os.Exit(1)
+	} else {
+		wal.InitBG(wl, 100)
+	}
 }
 
 func startWorkerQueueMode() {
 	slog.Info("staring queue worker")
-	sigs := make(chan os.Signal, 1)
 	metricsSrv := worker.StartMetricsServer()
 	srv := worker.StartQueueWorker(sigs, wl)
 
 	// Wait for termination signal.
-	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT)
 	<-sigs
 
+	slog.Info("shutting down worker...")
 	// Stop worker server.
 	srv.Shutdown()
 
@@ -92,6 +100,9 @@ func startWorkerQueueMode() {
 }
 
 func startServerMode(app *cli.App) {
+	serverErrCh := make(chan error, 2)
+	wg := sync.WaitGroup{}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer stop()
 
@@ -110,27 +121,43 @@ func startServerMode(app *cli.App) {
 	// Add prometheus api
 	metrics.AddRoutes(apiServer)
 
-	// Finally start api server
-	g.Go(apiServer.Start)
+	wg.Add(1)
 	go func() {
-		<-ctx.Done()
+		defer wg.Done()
+		go apiServer.Start(serverErrCh)
+	}()
 
-		// Trigger shutdown handlers
-		slog.Info("shutting down...")
-		apiServer.Shutdown(ctx)
-		httpListenerServer.Shutdown(ctx)
-
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-sigs
 		stop()
 	}()
 
-	if err := g.Wait(); err != nil {
-		// disp.Stop()
-		if err != http.ErrServerClosed {
-			slog.Error("Error while waiting for goroutines to complete.", slog.Any("error", err))
-		}
-		os.Exit(0)
+	// Run indefinitely
+	select {
+	case <-ctx.Done():
+		apiServer.Shutdown(ctx)
+		httpListenerServer.Shutdown(ctx)
+
+		// Shutdown WAL
+		wal.ShutdownBG()
+		stop()
+		break
+
+		// os.Exit(0)
+	case <-sigs:
+		slog.Info("shutting down server...")
+		apiServer.Shutdown(ctx)
+		httpListenerServer.Shutdown(ctx)
+
+		// Shutdown WAL
+		wal.ShutdownBG()
+		stop()
 	}
 
-	// Run indefinitely
-	select {}
+	close(serverErrCh) // Close the channel when both servers are done
+	close(sigs)
+
+	wg.Wait()
 }

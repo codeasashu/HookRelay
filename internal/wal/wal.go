@@ -22,16 +22,21 @@ type AbstractWAL interface {
 	Close() error
 	Init(t time.Time) error
 	ForEachEvent(f func(e event.Event) error) error
+	ForEachEventDeliveriesBatch(batchSize int, f func(e []*event.EventDelivery) error) error
+	DoAccounting(e []*event.EventDelivery) error
+	Shutdown() error
 }
 
 var (
-	ticker *time.Ticker
-	stopCh chan struct{}
-	mu     sync.Mutex
+	rotateTicker *time.Ticker
+	replayTicker *time.Ticker
+	stopCh       chan struct{}
+	mu           sync.Mutex
 )
 
 func init() {
-	ticker = time.NewTicker(1 * time.Minute)
+	rotateTicker = time.NewTicker(1 * time.Minute)
+	replayTicker = time.NewTicker(5 * time.Second)
 	stopCh = make(chan struct{})
 }
 
@@ -49,23 +54,28 @@ func rotateWAL(wl AbstractWAL) {
 }
 
 func periodicRotate(wl AbstractWAL) {
+	slog.Info("starting periodic rotate worker")
 	for {
 		select {
-		case <-ticker.C:
+		case <-rotateTicker.C:
 			rotateWAL(wl)
 		case <-stopCh:
+			wl.Shutdown()
 			return
 		}
 	}
 }
 
-func InitBG(wl AbstractWAL) {
+func InitBG(wl AbstractWAL, batchSize int) {
 	go periodicRotate(wl)
+	go periodicReplay(wl, batchSize)
 }
 
 func ShutdownBG() {
+	slog.Info("shutting down WAL")
 	close(stopCh)
-	ticker.Stop()
+	rotateTicker.Stop()
+	replayTicker.Stop()
 }
 
 func ReplayWAL(wl AbstractWAL) {
@@ -76,4 +86,33 @@ func ReplayWAL(wl AbstractWAL) {
 	if err != nil {
 		slog.Warn("error replaying WAL", slog.Any("error", err))
 	}
+}
+
+func periodicReplay(wl AbstractWAL, batchSize int) {
+	slog.Info("starting periodic replay worker", "batch", batchSize)
+	for {
+		select {
+		case <-replayTicker.C:
+			replayWALBatch(wl, batchSize)
+		case <-stopCh:
+			return
+		}
+	}
+}
+
+func replayWALBatch(wl AbstractWAL, batchSize int) {
+	// var wg sync.WaitGroup
+	// wg.Add(1) // @TODO: make it 2: 1=accounting, 1=recovery
+
+	slog.Info("replaying event deliveries", "batch", batchSize)
+	err := wl.ForEachEventDeliveriesBatch(batchSize, func(c []*event.EventDelivery) error {
+		slog.Info("replayed event deliveries", "batch", len(c))
+		go wl.DoAccounting(c)
+		return nil
+	})
+	if err != nil {
+		slog.Warn("error replaying WAL", slog.Any("error", err))
+	}
+	// wg.Wait()
+	slog.Info("Sync and recovery completed")
 }

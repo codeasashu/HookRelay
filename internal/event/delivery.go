@@ -1,6 +1,7 @@
 package event
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -20,25 +21,28 @@ const (
 
 type EventDelivery struct {
 	ID             int64     `json:"id,omitempty" db:"id"`
-	EventID        int64     `json:"event_id,omitempty" db:"event_id"`
-	OwnerId        string    `json:"owner_id"`
+	EventType      string    `json:"event_type,omitempty" db:"event_type"`
+	Payload        []byte    `json:"payload,omitempty" db:"payload"`
 	SubscriptionId string    `json:"subscription_id" db:"subscription_id"`
 	StartedAt      time.Time `json:"started_at" db:"started_at"`
 	CompletedAt    time.Time `json:"completed_at" db:"completed_at"`
 	StatusCode     int       `json:"status_code" db:"status_code"`
 	Error          string    `json:"error" db:"error"`
-	Latency        float64   `json:"latency" db:"latency"`
 }
 
 func NewEventDelivery(e *Event, subscription_id string, statusCode int, err error) *EventDelivery {
+	// Convert map[string]interface{} e.Payload into string
+	payloadBytes, cerr := json.Marshal(e.Payload)
+	if cerr != nil {
+		payloadBytes = []byte("{}")
+	}
 	delivery := &EventDelivery{
-		EventID:        e.UID,
-		OwnerId:        e.OwnerId,
+		EventType:      e.EventType,
+		Payload:        payloadBytes,
 		StartedAt:      e.AcknowledgedAt,
 		SubscriptionId: subscription_id,
 		CompletedAt:    time.Now(),
 		StatusCode:     0,
-		Latency:        float64(time.Since(e.CreatedAt)) / float64(time.Microsecond),
 	}
 
 	delivery.StatusCode = statusCode
