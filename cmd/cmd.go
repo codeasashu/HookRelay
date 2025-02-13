@@ -18,6 +18,7 @@ import (
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	wrkr "github.com/codeasashu/HookRelay/internal/worker"
+	"github.com/codeasashu/HookRelay/pkg/delivery"
 	"github.com/codeasashu/HookRelay/pkg/listener"
 	"github.com/codeasashu/HookRelay/pkg/subscription"
 	"github.com/codeasashu/HookRelay/pkg/worker"
@@ -27,9 +28,10 @@ import (
 )
 
 var (
-	g    errgroup.Group
-	wl   wal.AbstractWAL
-	sigs chan os.Signal
+	g          errgroup.Group
+	wl         wal.AbstractWAL
+	sigs       chan os.Signal
+	deliveryDb database.Database
 )
 
 func main() {
@@ -67,7 +69,7 @@ func Init(app *cli.App) {
 	app.DB = db
 
 	// Delivery DB
-	deliveryDb, err := database.NewMySQLStorage(config.HRConfig.Delivery.Database)
+	deliveryDb, err = database.NewMySQLStorage(config.HRConfig.Delivery.Database)
 	if err != nil {
 		slog.Warn("error connecting to delivery db, accounting will not work", "err", err)
 	}
@@ -115,6 +117,7 @@ func startServerMode(app *cli.App) {
 	apiServer := api.InitApiServer()
 
 	subscription.AddRoutes(apiServer)
+	delivery.AddRoutes(apiServer, deliveryDb)
 	httpListenerServer := listener.NewHTTPListener(disp, wl)
 	httpListenerServer.AddRoutes(apiServer)
 
