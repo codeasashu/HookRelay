@@ -24,8 +24,7 @@ type Postgres struct {
 	randGen  *rand.Rand
 }
 
-func NewPostgreSQLStorage() (*Postgres, error) {
-	dbConfig := config.HRConfig.Database
+func NewPostgreSQLStorage(dbConfig config.DatabaseConfiguration) (*Postgres, error) {
 	primary, err := parseDBConfig(dbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %v", err)

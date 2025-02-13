@@ -154,7 +154,7 @@ func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscri
 
 func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscription, error) {
 	var query string
-	if config.HRConfig.Database.Type == config.PostgresDatabaseProvider {
+	if config.HRConfig.Subscription.Database.Type == config.PostgresDatabaseProvider {
 		query = `
     SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
     FROM hookrelay.subscription
@@ -173,7 +173,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 	}
 
 	if query == "" {
-		return nil, fmt.Errorf("unsupported database type: %s", config.HRConfig.Database.Type)
+		return nil, fmt.Errorf("unsupported database type: %s", config.HRConfig.Subscription.Database.Type)
 	}
 
 	// Convert the event_type into a JSON array for the query

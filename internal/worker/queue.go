@@ -93,7 +93,7 @@ func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	_, err := j.Exec() // Update job result
 	wl.LogEventDelivery(j.Result)
-	m.RecordEndToEndLatency(j.Result, "asynq")
+	m.RecordEndToEndLatency(j.Event, "asynq")
 	if err != nil {
 		slog.Error("error processing job", "job_id", j.ID, "error", err)
 		return err

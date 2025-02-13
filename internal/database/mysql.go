@@ -22,8 +22,7 @@ type MySQL struct {
 	randGen  *rand.Rand
 }
 
-func NewMySQLStorage() (*MySQL, error) {
-	dbConfig := config.HRConfig.Database
+func NewMySQLStorage(dbConfig config.DatabaseConfiguration) (*MySQL, error) {
 	primary, err := parseMysqlDBConfig(dbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MySQL: %v", err)
