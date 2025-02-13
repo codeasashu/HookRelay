@@ -1,17 +1,37 @@
 package event
 
 import (
-	"errors"
+	"fmt"
+	"log/slog"
 
-	"github.com/codeasashu/HookRelay/internal/database"
+	"github.com/jmoiron/sqlx"
 )
 
-type EventModel struct {
-	db database.Database
-}
+func GetDeliveriesByOwner(db *sqlx.DB, ownerId string, limit uint16, offset uint16) ([]*EventDelivery, error) {
+	rows, err := db.Query(`
+        SELECT event_type, payload, subscription_id, status_code, error, created_at FROM event_delivery ed
+        INNER JOIN SUBSCRIPTION s ON s.id = ed.subscription_id WHERE s.owner_id = ? LIMIT ? OFFSET ?
+        `, ownerId, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query deliveries: %v", err)
+	}
 
-var ErrEventNotCreated = errors.New("subscription could not be created")
+	batch := make([]*EventDelivery, 0)
+	for rows.Next() {
+		var e EventDelivery
+		if err := rows.Scan(&e.EventType, &e.Payload, &e.SubscriptionId, &e.StatusCode, &e.Error, &e.CompletedAt); err != nil {
+			slog.Error("failed to scan WAL file", slog.Any("error", err))
+			continue
+		}
 
-func NewEventModel(db database.Database) *EventModel {
-	return &EventModel{db: db}
+		batch = append(batch, &e)
+	}
+
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+
+	rows.Close()
+	return batch, nil
 }
