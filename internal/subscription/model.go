@@ -73,13 +73,13 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 
 	headers, err := json.Marshal(s.Target.HTTPDetails.Headers)
 	if err != nil {
-		slog.Error("failed to marshal subscription event types", "err", err)
+		slog.Error("failed to marshal subscription headers", "err", err)
 		return err
 	}
 
 	auth, err := json.Marshal(s.Target.HTTPDetails.BasicAuth)
 	if err != nil {
-		slog.Error("failed to marshal subscription event types", "err", err)
+		slog.Error("failed to marshal subscription auth", "err", err)
 		return err
 	}
 

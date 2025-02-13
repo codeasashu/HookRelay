@@ -17,13 +17,13 @@ var m *metrics.Metrics
 
 type Subscription struct {
 	// lock    *sync.RWMutex
-	ID         string
-	OwnerId    string         `json:"owner_id" binding:"required" db:"owner_id"`
-	Target     *target.Target `json:"target"`
-	EventTypes []string       `json:"event_types"`
-	Tags       []string       `json:"tags"`
-
-	Status       int `db:"status"`
+	ID           string
+	OwnerId      string          `json:"owner_id" binding:"required" db:"owner_id"`
+	Target       *target.Target  `json:"target"`
+	EventTypes   []string        `json:"event_types"`
+	Status       int             `db:"status"`
+	Filters      json.RawMessage `json:"filters,omitempty" db:"filters"`
+	Tags         []string        `json:"tags"`
 	CreatedAt    time.Time
 	StartedAt    time.Time
 	DispatchedAt time.Time
