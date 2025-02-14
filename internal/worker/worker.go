@@ -42,10 +42,8 @@ func (j *Job) Exec() (*Job, error) {
 	if m == nil {
 		m = metrics.GetDPInstance()
 	}
-	j.Subscription.Dispatch()
 	statusCode, err := j.Subscription.Target.ProcessTarget(j.Event.Payload)
 	j.numDeliveries++
-	j.Subscription.Complete()
 	j.Result = event.NewEventDelivery(j.Event, j.Subscription.ID, statusCode, err)
 	if j.Result.IsSuccess() {
 		m.IncrementIngestSuccessTotal(j.Event, "local")

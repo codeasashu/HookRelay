@@ -9,9 +9,9 @@ type Event struct {
 	Payload        interface{} `json:"payload"`
 	OwnerId        string      `json:"owner_id"`
 	EventType      string      `json:"event_type"`
+	IdempotencyKey string      `json:"idempotency_key"`
 	CreatedAt      time.Time
 	AcknowledgedAt time.Time
-	CompletedAt    time.Time
 }
 
 func New() *Event {
