@@ -32,13 +32,10 @@ func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
 				Type:        target.TargetType(target.TargetHTTP),
 				HTTPDetails: cs.Target,
 			},
-			EventTypes:   cs.EventTypes,
-			Tags:         cs.Tags,
-			Status:       cs.Status,
-			CreatedAt:    cs.CreatedAt,
-			StartedAt:    cs.StartedAt,
-			DispatchedAt: cs.DispatchedAt,
-			CompleteAt:   cs.CompleteAt,
+			EventTypes: cs.EventTypes,
+			Tags:       cs.Tags,
+			Status:     cs.Status,
+			CreatedAt:  cs.CreatedAt,
 		}
 		model := subscription.NewSubscriptionModel(app.DB)
 		err := model.CreateSubscription(s)

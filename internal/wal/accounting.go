@@ -25,14 +25,22 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Preparex("INSERT INTO hookrelay.event_delivery (event_type, payload, subscription_id, status_code, error, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Preparex("INSERT INTO hookrelay.event_delivery (event_type, payload, subscription_id, status_code, error, start_at, complete_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer stmt.Close()
 
 	for _, d := range deliveries {
-		_, err := stmt.Exec(d.EventType, d.Payload, d.SubscriptionId, d.StatusCode, d.Error, d.CompletedAt)
+		_, err := stmt.Exec(
+			d.EventType,
+			d.Payload,
+			d.SubscriptionId,
+			d.StatusCode,
+			d.Error,
+			d.StartAt.UTC().Format("2006-01-02 15:04:05.999999"),
+			d.CompleteAt.UTC().Format("2006-01-02 15:04:05.999999"),
+		)
 		if err != nil {
 			slog.Error("Error inserting to MySQL:", "err", err)
 		}

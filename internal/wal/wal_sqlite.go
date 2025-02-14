@@ -91,9 +91,7 @@ func (w *WALSQLite) Init(t time.Time) error {
         owner_id TEXT NOT NULL,
         event_type TEXT NOT NULL,
         payload TEXT, -- SQLite does not have a native JSON type, store as TEXT
-        idempotency_key TEXT,
-        accepted_at TIMESTAMP NULL DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+        idempotency_key TEXT);`)
 	if err != nil {
 		return err
 	}
@@ -105,7 +103,8 @@ func (w *WALSQLite) Init(t time.Time) error {
         subscription_id TEXT NOT NULL,
         status_code INTEGER,
         error TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+        start_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        complete_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
 	if err != nil {
 		return err
 	}
@@ -123,7 +122,7 @@ func (w *WALSQLite) LogEvent(e *event.Event) error {
 		payloadBytes = []byte("{}")
 	}
 
-	if res, err := w.curDB.Exec("INSERT INTO events (owner_id, event_type, payload) VALUES (?,?,?)", e.OwnerId, e.EventType, payloadBytes); err != nil {
+	if res, err := w.curDB.Exec("INSERT INTO events (owner_id, event_type, payload, idempotency_key) VALUES (?,?,?,?)", e.OwnerId, e.EventType, payloadBytes, e.IdempotencyKey); err != nil {
 		slog.Error("failed to log event in WAL", slog.Any("error", err))
 		return err
 	} else {
@@ -147,7 +146,10 @@ func (w *WALSQLite) LogEventDelivery(e *event.EventDelivery) error {
 		payloadBytes = []byte("{}")
 	}
 
-	if res, err := w.curDB.Exec("INSERT INTO event_deliveries (event_type, payload, subscription_id, status_code, error, created_at) VALUES (?,?,?,?,?,?)", e.EventType, payloadBytes, e.SubscriptionId, e.StatusCode, e.Error, e.CompletedAt); err != nil {
+	if res, err := w.curDB.Exec(
+		"INSERT INTO event_deliveries (event_type, payload, subscription_id, status_code, error, start_at, complete_at) VALUES (?,?,?,?,?,?,?)",
+		e.EventType, payloadBytes, e.SubscriptionId, e.StatusCode, e.Error, e.StartAt, e.CompleteAt,
+	); err != nil {
 		slog.Error("failed to log event in WAL", slog.Any("error", err))
 		return err
 	} else {
@@ -176,7 +178,7 @@ func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
 		return err
 	}
 
-	stmt, err := tx.Prepare("INSERT INTO event_deliveries (event_type, payload, subscription_id, status_code, error, created_at) VALUES (?,?,?,?,?,?)")
+	stmt, err := tx.Prepare("INSERT INTO event_deliveries (event_type, payload, subscription_id, status_code, error, start_at, complete_at) VALUES (?,?,?,?,?,?,?)")
 	if err != nil {
 		slog.Error("failed to prepare statement for batch event logging", slog.Any("error", err))
 		_ = tx.Rollback()
@@ -185,7 +187,7 @@ func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
 	defer stmt.Close()
 
 	for _, e := range events {
-		_, err := stmt.Exec(e.EventType, e.Payload, e.SubscriptionId, e.StatusCode, e.Error, e.CompletedAt)
+		_, err := stmt.Exec(e.EventType, e.Payload, e.SubscriptionId, e.StatusCode, e.Error, e.StartAt, e.CompleteAt)
 		if err != nil {
 			slog.Error("failed to log event in batch WAL insert", slog.Any("error", err))
 			_ = tx.Rollback()
@@ -276,7 +278,7 @@ func (w *WALSQLite) ForEachEvent(f func(c event.Event) error) error {
 			var e event.Event
 			var payload string
 			// if err := rows.Scan(&command); err != nil {
-			if err := rows.Scan(&e.UID, &e.OwnerId, &e.EventType, &payload, &e.CreatedAt, &e.AcknowledgedAt, &e.CompletedAt); err != nil {
+			if err := rows.Scan(&e.UID, &e.OwnerId, &e.EventType, &payload, &e.IdempotencyKey); err != nil {
 				return fmt.Errorf("failed to scan WAL file %s: %v", file.Name(), err)
 			}
 
@@ -362,7 +364,7 @@ func (w *WALSQLite) ForEachEventDeliveriesBatch(batchSize int, f func([]*event.E
 		}
 		slog.Info("total event deliveries in WAL file", slog.String("file", file.Name()), slog.Int("count", totalDeliveries))
 
-		rows, err := db.Query("SELECT event_type, payload, subscription_id, status_code, error, created_at FROM event_deliveries")
+		rows, err := db.Query("SELECT event_type, payload, subscription_id, status_code, error, start_at, complete_at FROM event_deliveries")
 		if err != nil {
 			db.Close()
 			return fmt.Errorf("failed to query WAL file %s: %v", file.Name(), err)
@@ -373,7 +375,7 @@ func (w *WALSQLite) ForEachEventDeliveriesBatch(batchSize int, f func([]*event.E
 		for rows.Next() {
 			var e event.EventDelivery
 
-			if err := rows.Scan(&e.EventType, &e.Payload, &e.SubscriptionId, &e.StatusCode, &e.Error, &e.CompletedAt); err != nil {
+			if err := rows.Scan(&e.EventType, &e.Payload, &e.SubscriptionId, &e.StatusCode, &e.Error, &e.StartAt, &e.CompleteAt); err != nil {
 				slog.Error("failed to scan WAL file", slog.Any("file", file.Name()), slog.Any("error", err))
 				continue
 			}

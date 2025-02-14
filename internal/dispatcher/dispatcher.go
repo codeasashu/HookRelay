@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/event"
@@ -39,14 +38,12 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 		subscriptions, err := subModel.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
 		if err != nil {
 			slog.Error("error fetching subscriptions", "err", err)
-			event.CompletedAt = time.Now()
 			continue
 		}
 
 		slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType, "owner_id", event.OwnerId)
 		m.RecordPreFlightLatency(&event)
 		if len(subscriptions) == 0 {
-			event.CompletedAt = time.Now()
 			continue
 		}
 		// d.lock.Lock()
@@ -54,7 +51,6 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 		// d.lock.Unlock()
 		// Fanout all the subscriptions for concurrent execution
 		for _, sub := range subscriptions {
-			sub.StartedAt = time.Now()
 			job := &worker.Job{
 				ID:           strconv.Itoa(int(event.UID)) + "_" + strings.ToLower(event.EventType),
 				Event:        &event,

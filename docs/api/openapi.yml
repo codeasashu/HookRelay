@@ -9,10 +9,105 @@ servers:
   - url: "https://localhost:8081"
 security:
   - PlaceholderAuth: []
+tags:
+  - name: Delivery
+    description: Event Deliveries
+  - name: Subscription
+    description: Event Subscriptions
 paths:
+  /delivery/{owner_id}:
+    get:
+      tags:
+        - Delivery
+      summary: Get deliveries by owner
+      operationId: GetDeliveriesByOwner
+      parameters:
+        - name: owner_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The owner of the subscription
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: The cursor to use for the next request. Value is in UNIX Epoch (microsecond level)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: The maximum number of deliveries to return. Default of 10 is used if limit is not provided
+        - name: start_gte
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-02-14T09:53:45Z"
+          description: Return the deliveries that started at or after this time
+        - name: start_lte
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-02-14T09:53:45Z"
+          description: Return the deliveries that started at or before this time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              # Generate schema from this json: {"count":2,"deliveries":[{"complete_at":"2025-02-14T09:53:46.76084Z","error":"","event_type":"order.created","id":13,"payload":"eyJhIjoiYWJjIiwiYiI6ImRlZiJ9","start_at":"2025-02-14T09:53:45.836787Z","status_code":200,"subscription_id":"8484c5ab6ae468babb2bf41cd4679f295040ea88"}],"next_cursor":1739526825836787,"status":"success"}
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 20
+                  next_cursor:
+                    type: integer
+                    example: 1739526825836787
+                    description: The cursor to use for the next request. Value is in UNIX Epoch (microsecond level)
+                  status:
+                    type: string
+                    enum:
+                      - "success"
+                    example: "success"
+                  deliveries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Delivery"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "subscription already exists"
+                  status:
+                    type: string
+                    enum:
+                      - "error"
+                    example: "error"
+              examples:
+                InvalidStartDateInQuery:
+                  summary: "Invalid Start Date In Query"
+                  value:
+                    error: "Invalid start date in query"
+                    status: "error"
+
   /subscriptions:
     post:
-      summary: Create a new subscription
+      tags:
+        - Subscription
+      summary: Create subscription
       operationId: createSubscription
       requestBody:
         required: true
@@ -57,6 +152,35 @@ paths:
                     example: "error"
 components:
   schemas:
+    Delivery:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 13
+        error:
+          type: string
+          example: ""
+        event_type:
+          type: string
+          example: "order.created"
+        payload:
+          type: string
+          example: "eyJhIjoiYWJjIiwiYiI6ImRlZiJ9"
+        start_at:
+          type: string
+          example: "2025-02-14T09:53:45.836787Z"
+          format: date-time
+        complete_at:
+          type: string
+          example: "2025-02-14T09:53:46.76084Z"
+          format: date-time
+        status_code:
+          type: integer
+          example: 200
+        subscription_id:
+          type: string
+          example: "8484c5ab6ae468babb2bf41cd4679f295040ea88"
     Subscription:
       type: object
       required:

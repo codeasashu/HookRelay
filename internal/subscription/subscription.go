@@ -16,35 +16,19 @@ import (
 var m *metrics.Metrics
 
 type Subscription struct {
-	// lock    *sync.RWMutex
-	ID           string
-	OwnerId      string          `json:"owner_id" binding:"required" db:"owner_id"`
-	Target       *target.Target  `json:"target"`
-	EventTypes   []string        `json:"event_types"`
-	Status       int             `db:"status"`
-	Filters      json.RawMessage `json:"filters,omitempty" db:"filters"`
-	Tags         []string        `json:"tags"`
-	CreatedAt    time.Time
-	StartedAt    time.Time
-	DispatchedAt time.Time
-	CompleteAt   time.Time
+	ID         string
+	OwnerId    string          `json:"owner_id" binding:"required" db:"owner_id"`
+	Target     *target.Target  `json:"target"`
+	EventTypes []string        `json:"event_types"`
+	Filters    json.RawMessage `json:"filters,omitempty" db:"filters"`
+	Tags       []string        `json:"tags"`
+	Status     int             `json:"status" db:"status"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type ReadSubscription struct {
 	Target *target.HTTPDetails `json:"target" binding:"required"`
 	*Subscription
-}
-
-func (e *Subscription) Dispatch() {
-	// e.lock.Lock()
-	e.DispatchedAt = time.Now()
-	// e.lock.Unlock()
-}
-
-func (e *Subscription) Complete() {
-	// e.lock.Lock()
-	e.CompleteAt = time.Now()
-	// e.lock.Unlock()
 }
 
 func genSHA(str string) (string, error) {
