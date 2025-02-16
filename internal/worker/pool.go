@@ -14,13 +14,11 @@ type WorkerPool struct {
 	queueClient *QueueClient
 }
 
-func NewWorkerPool(app *cli.App, wl wal.AbstractWAL) *WorkerPool {
-	// Pool always starts with localWorker
-	localWorker := NewLocalWorker(app, wl)
-	w := &WorkerPool{
-		localClient: localWorker.client.(*LocalClient),
-	}
-	return w
+func (wp *WorkerPool) AddLocalClient(app *cli.App, wl wal.AbstractWAL) error {
+	lw := NewLocalWorker(app, wl)
+	wp.localClient = lw.client.(*LocalClient)
+	slog.Info("added local worker")
+	return nil
 }
 
 func (wp *WorkerPool) AddQueueClient() error {
@@ -37,6 +35,9 @@ func (wp *WorkerPool) AddQueueClient() error {
 func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
 	// Checks if jobs should be scheduled to remote worker
 	// based on several criterias
+	if wp.queueClient == nil {
+		slog.Error("queue client not active")
+	}
 	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
 	remoteIsReady := wp.queueClient != nil
 	// remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()

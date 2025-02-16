@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	sync "sync"
@@ -23,7 +24,6 @@ type AbstractWAL interface {
 	Init(t time.Time) error
 	ForEachEvent(f func(e event.Event) error) error
 	ForEachEventDeliveriesBatch(batchSize int, f func(e []*event.EventDelivery) error) error
-	DoAccounting(e []*event.EventDelivery) error
 	Shutdown() error
 }
 
@@ -66,9 +66,9 @@ func periodicRotate(wl AbstractWAL) {
 	}
 }
 
-func InitBG(wl AbstractWAL, batchSize int) {
+func InitBG(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
 	go periodicRotate(wl)
-	go periodicReplay(wl, batchSize)
+	go periodicReplay(wl, batchSize, callbacks)
 }
 
 func ShutdownBG() {
@@ -88,26 +88,29 @@ func ReplayWAL(wl AbstractWAL) {
 	}
 }
 
-func periodicReplay(wl AbstractWAL, batchSize int) {
+func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
 	slog.Info("starting periodic replay worker", "batch", batchSize)
 	for {
 		select {
 		case <-replayTicker.C:
-			replayWALBatch(wl, batchSize)
+			replayWALBatch(wl, batchSize, callbacks)
 		case <-stopCh:
 			return
 		}
 	}
 }
 
-func replayWALBatch(wl AbstractWAL, batchSize int) {
+func replayWALBatch(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
 	// var wg sync.WaitGroup
 	// wg.Add(1) // @TODO: make it 2: 1=accounting, 1=recovery
 
 	slog.Info("replaying event deliveries", "batch", batchSize)
 	err := wl.ForEachEventDeliveriesBatch(batchSize, func(c []*event.EventDelivery) error {
 		slog.Info("replayed event deliveries", "batch", len(c))
-		go wl.DoAccounting(c)
+		for _, cb := range callbacks {
+			// execute callbacks asyncronously
+			go cb(c)
+		}
 		return nil
 	})
 	if err != nil {
@@ -116,3 +119,16 @@ func replayWALBatch(wl AbstractWAL, batchSize int) {
 	// wg.Wait()
 	slog.Info("Sync and recovery completed")
 }
+
+func DoAccounting(accounting *Accounting, e []*event.EventDelivery) error {
+	if accounting == nil {
+		slog.Warn("accounting not initialized, skipping...")
+		return errors.New("accounting not initialized")
+	}
+	accounting.CreateDeliveries(e)
+	return nil
+}
+
+// if w.accounting != nil {
+// 	w.accounting.db.Close()
+// }

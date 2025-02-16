@@ -3,7 +3,6 @@ package wal
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,13 +21,11 @@ type WALSQLite struct {
 	curDB       *sql.DB
 	curFilename string
 	mu          sync.Mutex
-	accounting  *Accounting
 }
 
-func NewSQLiteWAL(a *Accounting) *WALSQLite {
+func NewSQLiteWAL() *WALSQLite {
 	return &WALSQLite{
-		logDir:     config.HRConfig.WalConfig.Path,
-		accounting: a,
+		logDir: config.HRConfig.WalConfig.Path,
 	}
 }
 
@@ -205,9 +202,6 @@ func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
 }
 
 func (w *WALSQLite) Close() error {
-	// if w.accounting != nil {
-	// 	w.accounting.db.Close()
-	// }
 	err := w.curDB.Close()
 	if err != nil {
 		return err
@@ -223,9 +217,6 @@ func (w *WALSQLite) Close() error {
 
 func (w *WALSQLite) Shutdown() error {
 	slog.Info("Shutting down delivery db")
-	if w.accounting != nil {
-		w.accounting.db.Close()
-	}
 	return w.curDB.Close()
 }
 
@@ -424,14 +415,5 @@ func (w *WALSQLite) ForEachEventDeliveriesBatch(batchSize int, f func([]*event.E
 		}
 	}
 
-	return nil
-}
-
-func (w *WALSQLite) DoAccounting(e []*event.EventDelivery) error {
-	if w.accounting == nil {
-		slog.Warn("accounting not initialized, skipping...")
-		return errors.New("accounting not initialized")
-	}
-	w.accounting.CreateDeliveries(e)
 	return nil
 }

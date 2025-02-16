@@ -69,6 +69,7 @@ func (c *LocalClient) CurrentCapacity() int {
 
 func (c *LocalClient) IsNearlyFull() bool {
 	// Returns true if the queue is more than 40% full (coz only half the queue is alloted to JobQueue)
+	slog.Info("queue_size", "job_queue", len(c.JobQueue), "config", config.HRConfig.LocalWorker.QueueSize)
 	return len(c.JobQueue) > (config.HRConfig.LocalWorker.QueueSize/10)*4
 }
 
@@ -82,7 +83,7 @@ func (c *LocalClient) ReceiveJob() {
 	for i := 0; i < c.MinThreads; i++ {
 		c.launchThread()
 	}
-	go c.scaleThreads(1 * time.Second)
+	// go c.scaleThreads(1 * time.Second)
 }
 
 func (c *LocalClient) scaleThreads(interval time.Duration) {

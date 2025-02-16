@@ -4,30 +4,25 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/hibiken/asynq"
-	"golang.org/x/sys/unix"
 )
+
+type AsynqWorker struct {
+	ctx           context.Context
+	asyncqServer  *asynq.Server
+	metricsServer *http.Server
+}
 
 func metricsWrapper() func(asynq.Handler) asynq.Handler {
 	mw := metrics.GetDPInstance()
 	return func(next asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 			newctx := context.WithValue(ctx, metrics.MetricsContextKey, mw)
-			return next.ProcessTask(newctx, t)
-		})
-	}
-}
-
-func walWrapper(wl wal.AbstractWAL) func(asynq.Handler) asynq.Handler {
-	return func(next asynq.Handler) asynq.Handler {
-		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-			newctx := context.WithValue(ctx, wal.WorkerContextKey, wl)
 			return next.ProcessTask(newctx, t)
 		})
 	}
@@ -52,7 +47,21 @@ func StartMetricsServer() *http.Server {
 	return metricsSrv
 }
 
-func StartQueueWorker(sigs chan os.Signal, wl wal.AbstractWAL) *asynq.Server {
+func HandleJobWithAccounting(accounting *wal.Accounting) func(context.Context, *asynq.Task) error {
+	return func(ctx context.Context, t *asynq.Task) error {
+		return worker.HandleQueueJob(ctx, t, accounting)
+	}
+}
+
+func (q *AsynqWorker) Shutdown() {
+	q.asyncqServer.Shutdown()
+	if err := q.metricsServer.Shutdown(q.ctx); err != nil {
+		slog.Error("Error: metrics server shutdown", "err", err)
+	}
+}
+
+func StartQueueWorker(ctx context.Context, accounting *wal.Accounting) (*AsynqWorker, error) {
+	metricSrv := StartMetricsServer()
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
 			Addr:     config.HRConfig.QueueWorker.Addr,
@@ -63,21 +72,28 @@ func StartQueueWorker(sigs chan os.Signal, wl wal.AbstractWAL) *asynq.Server {
 		asynq.Config{
 			Concurrency: config.HRConfig.QueueWorker.Concurrency,
 			Queues: map[string]int{
-				worker.QueueName: 1,
+				worker.QueueName:       9,
+				worker.ResultQueueName: 1,
 			},
 		},
 	)
 
+	asynqWorker := &AsynqWorker{
+		ctx:           ctx,
+		asyncqServer:  srv,
+		metricsServer: metricSrv,
+	}
+
 	mux := asynq.NewServeMux()
 	mux.Use(metricsWrapper())
-	mux.Use(walWrapper(wl))
-	mux.HandleFunc(worker.TypeEventDelivery, worker.HandleQueueJob)
+	mux.HandleFunc(worker.TypeEventDelivery, HandleJobWithAccounting(accounting))
 
 	// Start worker server.
 	if err := srv.Start(mux); err != nil {
 		slog.Error("Failed to start worker server, shutting down", "err", err)
-		sigs <- unix.SIGTERM
+		metricSrv.Shutdown(ctx)
+		return nil, err
 	}
 
-	return srv
+	return asynqWorker, nil
 }
