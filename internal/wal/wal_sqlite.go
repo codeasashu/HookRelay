@@ -202,8 +202,8 @@ func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
 }
 
 func (w *WALSQLite) Close() error {
-	mu.Lock()
-	defer mu.Unlock()
+	// mu.Lock()
+	// defer mu.Unlock()
 
 	err := w.curDB.Close()
 	if err != nil {
