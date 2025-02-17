@@ -156,7 +156,7 @@ func (w *WALSQLite) LogEventDelivery(e *event.EventDelivery) error {
 		} else {
 			e.ID = -1
 		}
-		slog.Debug("logged event in WAL", slog.Any("id", e.ID))
+		slog.Debug("logged event delivery in WAL", slog.Any("id", e.ID))
 	}
 	return nil
 }
