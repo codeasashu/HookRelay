@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"embed"
 	"log/slog"
 	"strings"
@@ -18,6 +19,7 @@ var (
 )
 
 type App struct {
+	Ctx      context.Context
 	Version  string
 	DB       database.Database
 	Logger   *slog.Logger

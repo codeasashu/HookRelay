@@ -51,5 +51,5 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
 		return
 	}
 
-	slog.Debug("batch logged events in WAL", "count", len(deliveries))
+	slog.Debug("batch logged events in DB", "count", len(deliveries))
 }
