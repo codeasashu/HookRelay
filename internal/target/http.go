@@ -197,7 +197,7 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 
 	slog.Info("got HTTP reply", "status", resp.Status)
 	slog.Debug("got full HTTP response body", "body", string(body))
-	slog.Info("got HTTP response body (truncated)", "body", string(body[:100]))
+	slog.Info("got HTTP response body (truncated)", "body", string(body[:min(100, len(body))]))
 
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil
