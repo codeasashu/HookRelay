@@ -124,7 +124,7 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 
 func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscription, error) {
 	query := `
-    SELECT * FROM hookrelay.subscription WHERE owner_id = :owner_id
+    SELECT * FROM hookrelay.subscription WHERE owner_id = :owner_id AND status = 1
     `
 
 	rows, err := r.db.GetDB().NamedQuery(query, map[string]interface{}{"owner_id": ownerID})
@@ -160,6 +160,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
     FROM hookrelay.subscription
     WHERE owner_id = :owner_id
     AND event_types @> :event_types
+	AND status = 1
     `
 	} else {
 		query = `
@@ -167,6 +168,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
     FROM hookrelay.subscription
     WHERE owner_id = :owner_id
     AND (JSON_CONTAINS(event_types, :event_types) OR JSON_CONTAINS(event_types, '"*"'))
+	AND status = 1
     `
 	}
 
@@ -250,7 +252,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 
 func (r *SubscriptionModel) HasSubscriptions(subscriptionId string) (bool, error) {
 	query := `
-    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=:id
+    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=:id AND status = 1
     `
 
 	args := map[string]interface{}{"id": subscriptionId}
