@@ -118,9 +118,9 @@ func initWAL(accounting *wal.Accounting) wal.AbstractWAL {
 	return wl
 }
 
-func initServerWorkerPool(app *cli.App, wl wal.AbstractWAL) *wrkr.WorkerPool {
+func initServerWorkerPool(app *cli.App, ctx context.Context, wl wal.AbstractWAL) *wrkr.WorkerPool {
 	wp := &wrkr.WorkerPool{}
-	wp.AddLocalClient(app, wl)
+	wp.AddLocalClient(app, ctx, wl)
 	// For buffered events, incase local workers are overwhelmed
 	wp.AddQueueClient()
 	return wp
@@ -134,7 +134,7 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 	wl := initWAL(accounting)
 
 	// Init server WorkerPool with local workers
-	wp := initServerWorkerPool(app, wl)
+	wp := initServerWorkerPool(app, ctx, wl)
 
 	disp := dispatcher.NewDispatcher(wp)
 

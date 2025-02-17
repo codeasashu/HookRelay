@@ -83,7 +83,7 @@ func (c *LocalClient) ReceiveJob() {
 	for i := 0; i < c.MinThreads; i++ {
 		c.launchThread()
 	}
-	// go c.scaleThreads(1 * time.Second)
+	go c.scaleThreads(1 * time.Second)
 }
 
 func (c *LocalClient) scaleThreads(interval time.Duration) {

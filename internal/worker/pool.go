@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -14,7 +15,7 @@ type WorkerPool struct {
 	queueClient *QueueClient
 }
 
-func (wp *WorkerPool) AddLocalClient(app *cli.App, wl wal.AbstractWAL) error {
+func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, wl wal.AbstractWAL) error {
 	lw := NewLocalWorker(app, wl)
 	wp.localClient = lw.client.(*LocalClient)
 	slog.Info("added local worker")
