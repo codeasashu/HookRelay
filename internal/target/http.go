@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 type HTTPMethod string
@@ -74,35 +78,95 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		return 0, errors.New("missing HTTP details in target")
 	}
 
-	// Marshal payload into JSON
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		slog.Error("failed to marshal payload", "err", err)
-		return 0, err
-	}
-
-	// Create HTTP request
+	// conisder DefaultMethod if no method is provided
 	if target.HTTPDetails.Method == "" {
 		target.HTTPDetails.Method = DefaultMethod
 	}
 
 	var req *http.Request
-	if target.HTTPDetails.Method == GETMethod {
-		// No body in GET Method
-		req, err = http.NewRequest(string(target.HTTPDetails.Method), target.HTTPDetails.URL, http.NoBody)
-	} else {
-		req, err = http.NewRequest(string(target.HTTPDetails.Method), target.HTTPDetails.URL, bytes.NewBuffer(payloadBytes))
+	var err error
+	var bodyReader io.Reader = http.NoBody
+
+	// Handle POST request with different Content-Types
+	if target.HTTPDetails.Method == POSTMethod {
+		// Ensure Content-Type is set
+		contentType := target.HTTPDetails.Headers["Content-Type"]
+		if contentType == "" {
+			slog.Debug("No Content-Type header found, assuming it as: application/json")
+			contentType = "application/json" // Default Content-Type
+			target.HTTPDetails.Headers["Content-Type"] = contentType
+		}
+
+		// Handle different Content-Types
+		if contentType == "application/json" {
+			payloadBytes, err := json.Marshal(payload)
+			if err != nil {
+				slog.Error("failed to marshal JSON payload", "err", err)
+				return 0, err
+			}
+			bodyReader = bytes.NewBuffer(payloadBytes)
+		} else if contentType == "application/x-www-form-urlencoded" {
+			data := url.Values{}
+			if formData, ok := payload.(map[string]string); ok {
+				for key, value := range formData {
+					data.Set(key, value)
+				}
+			}
+			bodyReader = strings.NewReader(data.Encode())
+		} else if contentType == "multipart/form-data" {
+			var buffer bytes.Buffer
+			writer := multipart.NewWriter(&buffer)
+
+			if formData, ok := payload.(map[string]string); ok {
+				for key, value := range formData {
+					_ = writer.WriteField(key, value)
+				}
+			}
+
+			writer.Close()
+			bodyReader = &buffer
+			target.HTTPDetails.Headers["Content-Type"] = writer.FormDataContentType()
+		} else {
+			slog.Error("unsupported Content-Type found in headers", "content-type", contentType)
+			return 0, errors.New("unsupported Content-Type: " + contentType)
+		}
 	}
 
+	// Create HTTP request
+	req, err = http.NewRequest(string(target.HTTPDetails.Method), target.HTTPDetails.URL, bodyReader)
 	if err != nil {
 		slog.Error("failed to create HTTP request", "err", err)
 		return 0, err
 	}
 
+	// Set headers and authentication AFTER creating the request
 	req = target.SetHeaders(req)
 	req = target.SetAuth(req)
 
-	slog.Info("sending HTTP request", "req", req.URL.String())
+	// Log HTTP request details safely
+	sanitizedHeaders := make(map[string]string)
+	for key, value := range target.HTTPDetails.Headers {
+		// remove auth token for logging
+		if strings.ToLower(key) == "authorization" {
+			sanitizedHeaders[key] = "REDACTED"
+		} else {
+			sanitizedHeaders[key] = value
+		}
+	}
+
+	logAttrs := []any{
+		"method", string(target.HTTPDetails.Method),
+		"url", string(target.HTTPDetails.URL),
+		"headers", fmt.Sprintf("%+v", sanitizedHeaders),
+	}
+
+	// Log BasicAuth username if provided
+	if target.HTTPDetails.BasicAuth.Username != "" {
+		logAttrs = append(logAttrs, "basic_auth_username", target.HTTPDetails.BasicAuth.Username)
+	}
+
+	slog.Info("sending HTTP request", logAttrs...)
+
 	// Send HTTP request
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -112,10 +176,10 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read and log the response (for debugging purposes)
-	body, err := io.ReadAll(resp.Body)
+	// Read 250 bytes and log the response
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 250))
 	if err != nil {
-		slog.Info("failed to read HTTP response", "err", err)
+		slog.Error("failed to read HTTP response", "err", err)
 		return 0, err
 	}
 
@@ -124,14 +188,17 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		Code:   resp.StatusCode,
 		Body:   body,
 	}
-	if resp.StatusCode != 200 {
+
+	if resp.StatusCode != http.StatusOK {
 		targetResponse.Status = TargetStatus(StatusErr)
-		slog.Error("invalid http status", "status", resp.Status)
+		slog.Error("invalid HTTP status", "status", resp.Status)
 		return resp.StatusCode, errors.New("Non-200 Status: " + resp.Status)
 	}
 
-	slog.Info("got http reply", "status", resp.Status)
-	slog.Debug("got http response body", "body", string(body))
+	slog.Info("got HTTP reply", "status", resp.Status)
+	slog.Debug("got full HTTP response body", "body", string(body))
+	slog.Info("got HTTP response body (truncated)", "body", string(body[:min(100, len(body))]))
+
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil
 }

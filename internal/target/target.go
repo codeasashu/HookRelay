@@ -2,6 +2,9 @@ package target
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/codeasashu/HookRelay/internal/config"
 )
@@ -45,6 +48,29 @@ func NewHTTPTarget(url string, method string, headers map[string]string, basicAu
 		},
 		MaxRetries: maxRetries,
 	}
+
+	// Log HTTP request details safely
+	sanitizedHeaders := make(map[string]string)
+	for key, value := range headers {
+		// remove auth token for logging
+		if strings.ToLower(key) == "authorization" {
+			sanitizedHeaders[key] = "REDACTED"
+		} else {
+			sanitizedHeaders[key] = value
+		}
+	}
+
+	logAttrs := []any{
+		"method", method,
+		"url", url,
+		"headers", fmt.Sprintf("%+v", sanitizedHeaders),
+		"maxRetries", maxRetries,
+	}
+	if basicAuth.Username != "" {
+		logAttrs = append(logAttrs, "basic_auth_username", basicAuth.Username)
+	}
+	slog.Info("Created a new HTTPTarget", logAttrs...)
+
 	return t, nil
 }
 
