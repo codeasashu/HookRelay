@@ -19,12 +19,13 @@ var (
 )
 
 type App struct {
-	Ctx      context.Context
-	Version  string
-	DB       database.Database
-	Logger   *slog.Logger
-	Config   *config.Config
-	IsWorker bool
+	Ctx        context.Context
+	Version    string
+	DB         database.Database
+	Logger     *slog.Logger
+	Config     *config.Config
+	IsWorker   bool
+	LegacyMode bool
 }
 
 func NewApp() *App {

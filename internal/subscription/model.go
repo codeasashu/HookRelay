@@ -122,55 +122,55 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 	return nil
 }
 
-func (r *SubscriptionModel) FindSubscriptionsByOwner(ownerID string) ([]*Subscription, error) {
+func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(ownerID string) ([]Subscription, error) {
+	// @TODO: remove service_type check to fetch all (service_type = 1 is aftercall, service_type = 2 is incall)
 	query := `
-    SELECT * FROM hookrelay.subscription WHERE owner_id = :owner_id AND status = 1
+    SELECT id, company_id, url, request, simple, headers, auth, credentials, service_type, is_active, created FROM api_pushes
+    WHERE company_id = ?
+    AND service_type = 2
+    AND is_active = 1
+    AND status = 1
     `
-
-	rows, err := r.db.GetDB().NamedQuery(query, map[string]interface{}{"owner_id": ownerID})
+	rows, err := r.db.GetDB().Queryx(query, ownerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrSubscriptionNotFound
+			return nil, nil // No subscriptions found
 		}
-		return nil, err
+		slog.Error("DB error", "err", err)
+		return nil, fmt.Errorf("failed to query [legacy] subscriptions: %v", err)
 	}
 	defer rows.Close()
 
-	var subscriptions []*Subscription
+	var subscriptions []Subscription
 	for rows.Next() {
-		var sub *Subscription
-		if err := rows.StructScan(&sub); err != nil {
-			return nil, err
+		var s LegacySubscription
+		err := rows.StructScan(&s)
+		if err != nil {
+			slog.Error("failed to fetch subscription", "error", err)
+			return nil, fmt.Errorf("failed to scan [legacy] subscription: %v", err)
 		}
-		subscriptions = append(subscriptions, sub)
-	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
+		ns, err := s.ConvertToSubscription()
+		if err != nil {
+			slog.Error("error converting [legacy] subscription", "error", err)
+			continue
+		}
+		subscriptions = append(subscriptions, *ns)
 	}
-
 	return subscriptions, nil
 }
 
-func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscription, error) {
-	var query string
-	if config.HRConfig.Subscription.Database.Type == config.PostgresDatabaseProvider {
-		query = `
-    SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
-    FROM hookrelay.subscription
-    WHERE owner_id = :owner_id
-    AND event_types @> :event_types
-	AND status = 1
-    `
-	} else {
-		query = `
+func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string, isLegacy bool) ([]Subscription, error) {
+	if isLegacy {
+		return r.FindLegacySubscriptionsByEventTypeAndOwner(ownerID)
+	}
+	query := `
     SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
     FROM hookrelay.subscription
     WHERE owner_id = :owner_id
     AND (JSON_CONTAINS(event_types, :event_types) OR JSON_CONTAINS(event_types, '"*"'))
 	AND status = 1
     `
-	}
 
 	if query == "" {
 		return nil, fmt.Errorf("unsupported database type: %s", config.HRConfig.Subscription.Database.Type)

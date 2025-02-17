@@ -35,7 +35,7 @@ func (d *Dispatcher) ListenForEvents(eventChannel <-chan event.Event) {
 	subModel := subscription.NewSubscriptionModel(app.DB)
 	for event := range eventChannel {
 		slog.Info("dispatching event", "id", event.UID, "type", event.EventType)
-		subscriptions, err := subModel.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
+		subscriptions, err := subModel.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId, app.LegacyMode)
 		if err != nil {
 			slog.Error("error fetching subscriptions", "err", err)
 			continue

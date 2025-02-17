@@ -74,31 +74,10 @@ func Init() {
 	m = metrics.GetDPInstance()
 }
 
-//	func (e *EventSubscrptions) Add(eventType string, subscription *Subscription) {
-//		e.Subscriptions[eventType] = append(es.Subscriptions[eventType], subscription)
-//		e.TotalSubscriptions += len(es.Subscriptions[eventType])
-//	}
 func CreateSubscription(app *cli.App, cs *Subscription) error {
 	model := NewSubscriptionModel(app.DB)
 	if err := model.CreateSubscription(cs); err != nil {
 		return err
 	}
-	// m.UpdateTotalSubscriptionCount(1)
 	return nil
 }
-
-// func GetSubscriptionsByEventType(eventType string) []*Subscription {
-// 	return es.Subscriptions[eventType]
-// }
-//
-// func GetSubscriptionsByOwner(ownerId string) []*Subscription {
-// 	found := make([]*Subscription, 0)
-// 	for _, subscriptions := range es.Subscriptions {
-// 		for _, subscription := range subscriptions {
-// 			if subscription.OwnerId == ownerId {
-// 				found = append(found, subscription)
-// 			}
-// 		}
-// 	}
-// 	return found
-// }
