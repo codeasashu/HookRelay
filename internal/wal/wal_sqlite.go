@@ -147,7 +147,7 @@ func (w *WALSQLite) LogEventDelivery(e *event.EventDelivery) error {
 		"INSERT INTO event_deliveries (event_type, payload, subscription_id, status_code, error, start_at, complete_at) VALUES (?,?,?,?,?,?,?)",
 		e.EventType, payloadBytes, e.SubscriptionId, e.StatusCode, e.Error, e.StartAt, e.CompleteAt,
 	); err != nil {
-		slog.Error("failed to log event in WAL", slog.Any("error", err))
+		slog.Error("failed to log event delivery in WAL", slog.Any("error", err))
 		return err
 	} else {
 		id, err := res.LastInsertId()
