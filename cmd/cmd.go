@@ -24,13 +24,11 @@ import (
 	"github.com/codeasashu/HookRelay/pkg/subscription"
 	"github.com/codeasashu/HookRelay/pkg/worker"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
 var (
 	sigs       chan os.Signal
-	g          errgroup.Group
 	deliveryDb database.Database
 )
 
@@ -130,7 +128,7 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 	serverErrCh := make(chan error, 2)
 	wg := sync.WaitGroup{}
 
-	// WAL is initialised in the main program
+	// WAL is initialised ONLY in the main program (and not in workers)
 	wl := initWAL(accounting)
 
 	// Init server WorkerPool with local workers
@@ -140,13 +138,12 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 
 	apiServer := api.InitApiServer()
 
+	// Add prometheus api
+	metrics.AddRoutes(apiServer)
 	subscription.AddRoutes(apiServer)
 	delivery.AddRoutes(apiServer, deliveryDb)
 	httpListenerServer := listener.NewHTTPListener(disp, wl)
 	httpListenerServer.AddRoutes(apiServer)
-
-	// Add prometheus api
-	metrics.AddRoutes(apiServer)
 
 	wg.Add(1)
 	go func() {
@@ -164,7 +161,6 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 		wal.ShutdownBG()
 		break
 
-		// os.Exit(0)
 	case <-sigs:
 		slog.Info("shutting down server...")
 		apiServer.Shutdown(ctx)
