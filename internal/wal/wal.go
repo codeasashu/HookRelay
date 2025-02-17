@@ -101,16 +101,20 @@ func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.Eve
 }
 
 func replayWALBatch(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
-	// var wg sync.WaitGroup
-	// wg.Add(1) // @TODO: make it 2: 1=accounting, 1=recovery
-
 	slog.Info("replaying event deliveries", "batch", batchSize)
 	err := wl.ForEachEventDeliveriesBatch(batchSize, func(c []*event.EventDelivery) error {
 		slog.Info("replayed event deliveries", "batch", len(c))
+		var wg sync.WaitGroup
 		for _, cb := range callbacks {
-			// execute callbacks asyncronously
-			go cb(c)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				cb(c)
+			}()
 		}
+		// Wait for all callbacks to finish, asyncronously
+		// @TODO: Use timeout context to cancel callback execution after certain timeout
+		wg.Wait()
 		return nil
 	})
 	if err != nil {
