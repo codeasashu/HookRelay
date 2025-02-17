@@ -176,8 +176,8 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read and log the response
-	body, err := io.ReadAll(resp.Body)
+	// Read 250 bytes and log the response
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 250))
 	if err != nil {
 		slog.Error("failed to read HTTP response", "err", err)
 		return 0, err
@@ -197,7 +197,7 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 
 	slog.Info("got HTTP reply", "status", resp.Status)
 	slog.Debug("got full HTTP response body", "body", string(body))
-	slog.Info("got HTTP response body (truncated)", "body", string(body[:min(250, len(body))]))
+	slog.Info("got HTTP response body (truncated)", "body", string(body[:100]))
 
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil
