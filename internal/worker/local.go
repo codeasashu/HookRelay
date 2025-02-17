@@ -134,7 +134,6 @@ func (w *LocalClient) launchThread() {
 				slog.Info("got job item", "job_id", job.ID)
 				m.RecordDispatchLatency(job.Event, "local")
 				_, err := job.Exec() // Update job result
-				time.Sleep(5 * time.Second)
 				if err != nil {
 					retryErr := job.Retry()
 					if retryErr == ErrTooManyRetry {
