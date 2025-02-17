@@ -36,9 +36,6 @@ func (wp *WorkerPool) AddQueueClient() error {
 func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
 	// Checks if jobs should be scheduled to remote worker
 	// based on several criterias
-	if wp.queueClient == nil {
-		slog.Error("queue client not active")
-	}
 	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
 	remoteIsReady := wp.queueClient != nil
 	// remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
