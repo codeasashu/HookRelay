@@ -69,3 +69,12 @@ func (wp *WorkerPool) Retry(job *Job) error {
 		return errors.New("error scheduling job. no worker available")
 	}
 }
+
+func (wp *WorkerPool) Shutdown() {
+	if wp.localClient != nil {
+		wp.localClient.Stop()
+	}
+	if wp.queueClient != nil {
+		wp.queueClient.Close()
+	}
+}

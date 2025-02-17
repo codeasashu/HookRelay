@@ -154,22 +154,14 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 		go apiServer.Start(serverErrCh)
 	}()
 
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	<-sigs
-	// 	stop()
-	// }()
-	//
 	// Run indefinitely
 	select {
 	case <-ctx.Done():
 		apiServer.Shutdown(ctx)
 		httpListenerServer.Shutdown(ctx)
+		wp.Shutdown()
 
-		// Shutdown WAL
 		wal.ShutdownBG()
-		// stop()
 		break
 
 		// os.Exit(0)
@@ -177,10 +169,10 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 		slog.Info("shutting down server...")
 		apiServer.Shutdown(ctx)
 		httpListenerServer.Shutdown(ctx)
+		wp.Shutdown()
 
-		// Shutdown WAL
 		wal.ShutdownBG()
-		// stop()
+		break
 	}
 
 	close(serverErrCh) // Close the channel when both servers are done
