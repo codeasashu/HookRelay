@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/hibiken/asynq"
@@ -82,18 +83,21 @@ func NewQueueJob(job *Job) (*asynq.Task, error) {
 	return asynq.NewTask(TypeEventDelivery, payload), nil
 }
 
-func HandleQueueJob(ctx context.Context, t *asynq.Task) error {
+func HandleQueueJob(ctx context.Context, t *asynq.Task, accounting *wal.Accounting) error {
 	var j Job
 	m := ctx.Value(metrics.MetricsContextKey).(*metrics.Metrics)
-	wl := ctx.Value(wal.WorkerContextKey).(wal.AbstractWAL)
 	if err := json.Unmarshal(t.Payload(), &j); err != nil {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
 	m.RecordDispatchLatency(j.Event, "asynq")
 	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
 	_, err := j.Exec() // Update job result
-	wl.LogEventDelivery(j.Result)
 	m.RecordEndToEndLatency(j.Event, "asynq")
+
+	// Add event delivery to result processing queue
+	// @TODO: Batch the inserts or use channels
+	accounting.CreateDeliveries([]*event.EventDelivery{j.Result})
+	// wl.LogEventDelivery(j.Result)
 	if err != nil {
 		slog.Error("error processing job", "job_id", j.ID, "error", err)
 		return err
