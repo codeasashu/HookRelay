@@ -24,20 +24,21 @@ type AbstractWAL interface {
 	Init(t time.Time) error
 	ForEachEvent(f func(e event.Event) error) error
 	ForEachEventDeliveriesBatch(batchSize int, f func(e []*event.EventDelivery) error) error
-	Shutdown() error
 }
 
 var (
 	rotateTicker *time.Ticker
 	replayTicker *time.Ticker
-	stopCh       chan struct{}
+	stopRotateCh chan struct{}
+	stopReplayCh chan struct{}
 	mu           sync.Mutex
 )
 
 func init() {
 	rotateTicker = time.NewTicker(1 * time.Minute)
 	replayTicker = time.NewTicker(5 * time.Second)
-	stopCh = make(chan struct{})
+	stopRotateCh = make(chan struct{})
+	stopReplayCh = make(chan struct{})
 }
 
 func rotateWAL(wl AbstractWAL) {
@@ -59,8 +60,8 @@ func periodicRotate(wl AbstractWAL) {
 		select {
 		case <-rotateTicker.C:
 			rotateWAL(wl)
-		case <-stopCh:
-			wl.Shutdown()
+		case <-stopRotateCh:
+			wl.Close()
 			return
 		}
 	}
@@ -73,9 +74,11 @@ func InitBG(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelive
 
 func ShutdownBG() {
 	slog.Info("shutting down WAL")
-	close(stopCh)
 	rotateTicker.Stop()
 	replayTicker.Stop()
+	close(stopRotateCh)
+	close(stopReplayCh)
+	time.Sleep(1 * time.Second)
 }
 
 func ReplayWAL(wl AbstractWAL) {
@@ -94,7 +97,8 @@ func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.Eve
 		select {
 		case <-replayTicker.C:
 			replayWALBatch(wl, batchSize, callbacks)
-		case <-stopCh:
+		case <-stopReplayCh:
+			wl.Close()
 			return
 		}
 	}

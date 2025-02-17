@@ -202,6 +202,9 @@ func (w *WALSQLite) LogBatchEventDelivery(events []*event.EventDelivery) error {
 }
 
 func (w *WALSQLite) Close() error {
+	mu.Lock()
+	defer mu.Unlock()
+
 	err := w.curDB.Close()
 	if err != nil {
 		return err
@@ -213,11 +216,6 @@ func (w *WALSQLite) Close() error {
 		return err
 	}
 	return nil
-}
-
-func (w *WALSQLite) Shutdown() error {
-	slog.Info("Shutting down delivery db")
-	return w.curDB.Close()
 }
 
 func (w *WALSQLite) ForEachEvent(f func(c event.Event) error) error {
