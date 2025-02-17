@@ -18,7 +18,6 @@ import (
 const (
 	TypeEventDelivery = "event:deliver"
 	QueueName         = "hookrelay"
-	ResultQueueName   = "hookrelay:results"
 )
 
 type QueueClient struct {

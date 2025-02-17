@@ -72,8 +72,7 @@ func StartQueueWorker(ctx context.Context, accounting *wal.Accounting) (*AsynqWo
 		asynq.Config{
 			Concurrency: config.HRConfig.QueueWorker.Concurrency,
 			Queues: map[string]int{
-				worker.QueueName:       9,
-				worker.ResultQueueName: 1,
+				worker.QueueName: 1,
 			},
 		},
 	)
