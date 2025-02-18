@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/wal"
+	"github.com/codeasashu/HookRelay/internal/event"
 )
 
 // @TODO: Make this a linked list to support multiple workers
@@ -15,8 +15,8 @@ type WorkerPool struct {
 	queueClient *QueueClient
 }
 
-func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, wl wal.AbstractWAL) error {
-	lw := NewLocalWorker(app, wl)
+func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) error {
+	lw := NewLocalWorker(app, callback)
 	wp.localClient = lw.client.(*LocalClient)
 	slog.Info("added local worker")
 	return nil

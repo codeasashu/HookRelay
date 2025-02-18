@@ -20,7 +20,7 @@ func NewAccounting(db database.Database) *Accounting {
 	}
 }
 
-func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
+func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) error {
 	tx, err := a.db.GetDB().Beginx()
 	if err != nil {
 		log.Fatal(err)
@@ -53,8 +53,9 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
 
 	if err := tx.Commit(); err != nil {
 		slog.Error("failed to commit batch WAL insert", slog.Any("error", err))
-		return
+		return err
 	}
 
 	slog.Debug("batch logged events in DB", "count", len(deliveries))
+	return nil
 }

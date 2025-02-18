@@ -26,6 +26,7 @@ type App struct {
 	Config     *config.Config
 	IsWorker   bool
 	LegacyMode bool
+	SkipWAL    bool
 }
 
 func NewApp() *App {
