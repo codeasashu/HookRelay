@@ -60,8 +60,10 @@ func (c *HookRelayCli) Execute() error {
 func (c *HookRelayCli) Setup() (*App, error) {
 	var configFile string
 	var legacyMode bool
+	var noWalMode bool
 	c.Flags().StringVarP(&configFile, "config", "c", "", "Configuration file for hookrelay")
 	c.Flags().BoolVarP(&legacyMode, "legacy-mode", "l", false, "Use legacy code")
+	c.Flags().BoolVar(&noWalMode, "skip-wal", false, "Don't use WAL mode")
 	c.AddCommand(AddServerCmd(c))
 	c.AddCommand(AddWorkerCmd(c))
 	if err := c.Execute(); err != nil {
@@ -77,6 +79,7 @@ func (c *HookRelayCli) Setup() (*App, error) {
 	c.app.Config = cfg
 	c.app.IsWorker = c.IsWorker
 	c.app.LegacyMode = legacyMode
+	c.app.SkipWAL = noWalMode
 	return c.app, nil
 }
 

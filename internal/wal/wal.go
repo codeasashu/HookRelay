@@ -67,7 +67,7 @@ func periodicRotate(wl AbstractWAL) {
 	}
 }
 
-func InitBG(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
+func InitBG(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
 	go periodicRotate(wl)
 	go periodicReplay(wl, batchSize, callbacks)
 }
@@ -91,7 +91,7 @@ func ReplayWAL(wl AbstractWAL) {
 	}
 }
 
-func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
+func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
 	slog.Info("starting periodic replay worker", "batch", batchSize)
 	for {
 		select {
@@ -104,7 +104,7 @@ func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.Eve
 	}
 }
 
-func replayWALBatch(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery)) {
+func replayWALBatch(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
 	slog.Info("replaying event deliveries", "batch", batchSize)
 	err := wl.ForEachEventDeliveriesBatch(batchSize, func(c []*event.EventDelivery) error {
 		slog.Info("replayed event deliveries", "batch", len(c))

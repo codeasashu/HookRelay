@@ -107,7 +107,7 @@ func initWAL(accounting *wal.Accounting) wal.AbstractWAL {
 	}
 
 	// Do accounting with WAL
-	walCallbacks := []func([]*event.EventDelivery){
+	walCallbacks := []func([]*event.EventDelivery) error{
 		accounting.CreateDeliveries,
 	}
 
@@ -116,9 +116,9 @@ func initWAL(accounting *wal.Accounting) wal.AbstractWAL {
 	return wl
 }
 
-func initServerWorkerPool(app *cli.App, ctx context.Context, wl wal.AbstractWAL) *wrkr.WorkerPool {
+func initServerWorkerPool(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) *wrkr.WorkerPool {
 	wp := &wrkr.WorkerPool{}
-	wp.AddLocalClient(app, ctx, wl)
+	wp.AddLocalClient(app, ctx, callback)
 	// For buffered events, incase local workers are overwhelmed
 	wp.AddQueueClient()
 	return wp
@@ -128,11 +128,17 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 	serverErrCh := make(chan error, 2)
 	wg := sync.WaitGroup{}
 
-	// WAL is initialised ONLY in the main program (and not in workers)
-	wl := initWAL(accounting)
-
-	// Init server WorkerPool with local workers
-	wp := initServerWorkerPool(app, ctx, wl)
+	var wp *wrkr.WorkerPool
+	var wl wal.AbstractWAL
+	var httpListenerServer *listener.HTTPListener
+	if app.SkipWAL {
+		wp = initServerWorkerPool(app, ctx, accounting.CreateDeliveries)
+	} else {
+		// WAL is initialised ONLY in the main program (and not in workers)
+		wl = initWAL(accounting)
+		// Init server WorkerPool with local workers
+		wp = initServerWorkerPool(app, ctx, wl.LogBatchEventDelivery)
+	}
 
 	disp := dispatcher.NewDispatcher(wp)
 
@@ -142,7 +148,13 @@ func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounti
 	metrics.AddRoutes(apiServer)
 	subscription.AddRoutes(apiServer)
 	delivery.AddRoutes(apiServer, deliveryDb)
-	httpListenerServer := listener.NewHTTPListener(disp, wl)
+
+	if app.SkipWAL {
+		httpListenerServer = listener.NewHTTPListener(disp, nil)
+	} else {
+		httpListenerServer = listener.NewHTTPListener(disp, wl.LogEvent)
+	}
+
 	httpListenerServer.AddRoutes(apiServer)
 
 	wg.Add(1)
