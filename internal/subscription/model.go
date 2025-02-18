@@ -122,14 +122,22 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 	return nil
 }
 
-func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(ownerID string) ([]Subscription, error) {
+func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscription, error) {
 	// @TODO: remove service_type check to fetch all (service_type = 1 is aftercall, service_type = 2 is incall)
 	query := `
     SELECT id, company_id, url, request, simple, headers, auth, credentials, service_type, is_active, created FROM api_pushes
     WHERE company_id = ?
-    AND service_type = 2
     AND is_active = 1
     `
+
+	switch eventType {
+	case "webhook.incall":
+		query += " AND service_type = 2"
+	case "webhook.aftercall":
+		query += " AND service_type = 1"
+	default:
+		return nil, sql.ErrNoRows
+	}
 	rows, err := r.db.GetDB().Queryx(query, ownerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -161,7 +169,7 @@ func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(ownerID s
 
 func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string, isLegacy bool) ([]Subscription, error) {
 	if isLegacy {
-		return r.FindLegacySubscriptionsByEventTypeAndOwner(ownerID)
+		return r.FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID)
 	}
 	query := `
     SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
