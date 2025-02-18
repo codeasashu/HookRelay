@@ -20,7 +20,7 @@ type LegacySubscription struct {
 	Crendentials string         `db:"credentials"`
 	IsActive     int            `db:"is_active"`
 	ServiceType  int            `db:"service_type"`
-	Created      time.Time      `json:"created"`
+	Created      time.Time      `db:"created"`
 }
 
 func (l *LegacySubscription) GetEventTypes() []string {
@@ -52,9 +52,8 @@ func (l *LegacySubscription) GetHeaders() map[string]string {
 		case 1:
 			headerMap["Content-Type"] = "multipart/form-data"
 		case 2:
-			headerMap["Content-Type"] = "application/json"
-		case 3:
 			headerMap["Content-Type"] = "application/x-www-form-urlencoded"
+		case 3:
 		default:
 			headerMap["Content-Type"] = "application/json"
 		}
