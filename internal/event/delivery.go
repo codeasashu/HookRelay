@@ -23,6 +23,7 @@ type EventDelivery struct {
 	ID             int64     `json:"id,omitempty" db:"id"`
 	EventType      string    `json:"event_type,omitempty" db:"event_type"`
 	Payload        []byte    `json:"payload,omitempty" db:"payload"`
+	OwnerId        string    `json:"owner_id" db:"owner_id"`
 	SubscriptionId string    `json:"subscription_id" db:"subscription_id"`
 	StartAt        time.Time `json:"start_at" db:"start_at"`
 	CompleteAt     time.Time `json:"complete_at" db:"complete_at"`
@@ -40,6 +41,7 @@ func NewEventDelivery(e *Event, subscription_id string, statusCode int, err erro
 		EventType:      e.EventType,
 		Payload:        payloadBytes,
 		StartAt:        e.AcknowledgedAt,
+		OwnerId:        e.OwnerId,
 		SubscriptionId: subscription_id,
 		CompleteAt:     time.Now(),
 		StatusCode:     0,
