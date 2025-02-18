@@ -129,7 +129,6 @@ func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(ownerID s
     WHERE company_id = ?
     AND service_type = 2
     AND is_active = 1
-    AND status = 1
     `
 	rows, err := r.db.GetDB().Queryx(query, ownerID)
 	if err != nil {
