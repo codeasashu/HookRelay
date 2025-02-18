@@ -11,7 +11,6 @@ import (
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
-	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -29,7 +28,7 @@ type LocalClient struct {
 	wg            sync.WaitGroup // WaitGroup for graceful shutdown
 }
 
-func NewLocalWorker(app *cli.App, wl wal.AbstractWAL) *Worker {
+func NewLocalWorker(app *cli.App, callback func([]*event.EventDelivery) error) *Worker {
 	minThreads := config.HRConfig.LocalWorker.MinThreads
 	maxThreads := config.HRConfig.LocalWorker.MaxThreads
 	if maxThreads != -1 && maxThreads < minThreads {
@@ -55,7 +54,7 @@ func NewLocalWorker(app *cli.App, wl wal.AbstractWAL) *Worker {
 
 	slog.Info("staring pool of local workers", "children", config.HRConfig.LocalWorker.ResultHandlerThreads)
 	for i := 0; i < config.HRConfig.LocalWorker.ResultHandlerThreads; i++ {
-		go ProcessResultsFromLocalChan(localClient.resultQueue, wl)
+		go ProcessBatchResults(localClient.resultQueue, callback)
 	}
 
 	localClient.ReceiveJob()
@@ -69,6 +68,7 @@ func (c *LocalClient) CurrentCapacity() int {
 
 func (c *LocalClient) IsNearlyFull() bool {
 	// Returns true if the queue is more than 40% full (coz only half the queue is alloted to JobQueue)
+	slog.Info("queue_size", "job_queue", len(c.JobQueue), "config", config.HRConfig.LocalWorker.QueueSize)
 	return len(c.JobQueue) > (config.HRConfig.LocalWorker.QueueSize/10)*4
 }
 
@@ -165,7 +165,7 @@ func (w *LocalClient) Stop() {
 	close(w.resultQueue)
 }
 
-func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
+func ProcessBatchResults(jobChan <-chan *Job, callback func([]*event.EventDelivery) error) {
 	const batchSize = 100
 	const flushInterval = 500 * time.Millisecond
 
@@ -179,7 +179,7 @@ func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
 			if !ok {
 				// Channel closed, flush remaining events
 				if len(batch) > 0 {
-					wl.LogBatchEventDelivery(batch)
+					callback(batch)
 				}
 				return
 			}
@@ -188,26 +188,14 @@ func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
 			batch = append(batch, job.Result)
 
 			if len(batch) >= batchSize {
-				wl.LogBatchEventDelivery(batch)
+				callback(batch)
 				batch = nil // Reset batch
 			}
 		case <-ticker.C:
 			if len(batch) > 0 {
-				wl.LogBatchEventDelivery(batch)
+				callback(batch)
 				batch = nil // Reset batch
 			}
 		}
 	}
 }
-
-// func ProcessResultsFromLocalChan(jobChan <-chan *Job, wl wal.AbstractWAL) {
-// 	// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
-// 	// deliveryModel := event.NewEventModel(app.DB)
-// 	// deliveryModel.CreateEventDelivery(job.Result)
-// 	for job := range jobChan {
-// 		m.IncrementIngestConsumedTotal(job.Event, "local")
-// 		// @TODO: Dont insert delivery result right away, process in batch (maybe insert into redis)
-// 		wl.LogEventDelivery(job.Result)
-// 		m.RecordEndToEndLatency(job.Result, "local")
-// 	}
-// }

@@ -37,9 +37,13 @@ func InitApiServer() *ApiServer {
 	}
 }
 
-func (a *ApiServer) Start() error {
+func (a *ApiServer) Start(errCh chan<- error) error {
 	slog.Info("Starting API server", "addr", a.server.Addr)
-	return a.server.ListenAndServe()
+	if err := a.server.ListenAndServe(); err != nil {
+		errCh <- err
+		return err
+	}
+	return nil
 }
 
 func (a *ApiServer) Shutdown(ctx context.Context) {

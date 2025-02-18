@@ -1,107 +1,120 @@
 package event
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
-	"github.com/codeasashu/HookRelay/internal/database"
+	"github.com/jmoiron/sqlx"
 )
 
-type EventModel struct {
-	db database.Database
+type EventDeliveryQueryParams struct {
+	EventType string
+	OwnerId   string
+	Limit     uint16
+	Offset    uint16
+	CreatedAt *time.Time
 }
 
-var ErrEventNotCreated = errors.New("subscription could not be created")
-
-func NewEventModel(db database.Database) *EventModel {
-	return &EventModel{db: db}
+func cursorToTime(ms int64) *time.Time {
+	seconds := ms / 1e6
+	nanoseconds := (ms % 1e6) * 1e3
+	cursorVal := time.Unix(seconds, nanoseconds).UTC()
+	return &cursorVal
 }
 
-func (r *EventModel) CreateEvent(s *Event) error {
+func timeToCursor(val *time.Time) int64 {
+	return val.UnixMicro()
+}
+
+func GetDeliveriesByOwner(
+	db *sqlx.DB,
+	ownerId string,
+	eventType *string,
+	createdAfter *time.Time,
+	createdBefore *time.Time,
+	cursor int64, // Cursor-based pagination (unix nano)
+	limit uint16,
+) (uint64, []*EventDelivery, int64, error) {
+	var totalCount uint64
+	// Count Query (Remains the same)
+	countQuery := `
+        SELECT COUNT(*) FROM event_delivery ed WHERE ed.owner_id = ?`
+
+	// Cursor-Based Query (Instead of OFFSET)
 	query := `
-    INSERT INTO hookrelay.event (id, owner_id, event_type, payload, idempotency_key, accepted_at, created_at, modified_at)
-    VALUES (:id, :owner_id, :event_type, :payload, :idempotency_key, :accepted_at, :created_at, :modified_at)
-    `
-	payload, err := json.Marshal(s.Payload)
+        SELECT ed.id, ed.event_type, ed.payload, ed.owner_id, ed.subscription_id, 
+               ed.status_code, ed.error, ed.start_at, ed.complete_at
+        FROM event_delivery ed WHERE ed.owner_id = ?`
+
+	countArgs := []interface{}{ownerId}
+	args := []interface{}{ownerId}
+
+	if *eventType != "" {
+		countQuery += " AND ed.event_type = ?"
+		query += " AND ed.event_type = ?"
+		countArgs = append(countArgs, *eventType)
+		args = append(args, *eventType)
+	}
+
+	if createdAfter != nil {
+		countQuery += " AND ed.start_at >= ?"
+		query += " AND ed.start_at >= ?"
+		countArgs = append(countArgs, *createdAfter)
+		args = append(args, *createdAfter)
+	}
+
+	if createdBefore != nil {
+		countQuery += " AND ed.start_at <= ?"
+		query += " AND ed.start_at <= ?"
+		countArgs = append(countArgs, *createdBefore)
+		args = append(args, *createdBefore)
+	}
+
+	if err := db.QueryRow(countQuery, countArgs...).Scan(&totalCount); err != nil {
+		return 0, nil, 0, fmt.Errorf("failed to get total count: %v", err)
+	}
+
+	if cursor != 0 {
+		query += " AND ed.start_at < ?"
+		cursorVal := cursorToTime(cursor)
+		args = append(args, cursorVal)
+	}
+
+	query += " ORDER BY ed.start_at DESC, ed.id DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := db.Query(query, args...)
 	if err != nil {
-		slog.Error("failed to marshal event payload", "err", err)
-		return err
+		return 0, nil, 0, fmt.Errorf("failed to query deliveries: %v", err)
 	}
-	args := map[string]interface{}{
-		"id":              s.UID,
-		"owner_id":        s.OwnerId,
-		"event_type":      s.EventType,
-		"payload":         payload,
-		"idempotency_key": "",
-		"accepted_at":     s.AcknowledgedAt,
-		"created_at":      s.CreatedAt,
-		"modified_at":     s.CreatedAt,
-	}
+	defer rows.Close()
 
-	slog.Info("creating event", "id", s.UID)
-
-	result, err := r.db.GetDB().NamedExec(
-		query,
-		args,
-	)
-	if err != nil {
-		slog.Error("DB error creating event11", "err", err)
-		return ErrEventNotCreated
+	batch := make([]*EventDelivery, 0)
+	var nextCursor int64
+	for rows.Next() {
+		var e EventDelivery
+		if err := rows.Scan(
+			&e.ID, &e.EventType, &e.Payload, &e.OwnerId, &e.SubscriptionId,
+			&e.StatusCode, &e.Error, &e.StartAt, &e.CompleteAt,
+		); err != nil {
+			slog.Error("failed to scan event delivery", slog.Any("error", err))
+			continue
+		}
+		batch = append(batch, &e)
+		startAt := &e.StartAt // Store the last seen timestamp for next cursor
+		slog.Info("storing cursor for", "startAt", startAt, "cursor", startAt.UnixMicro())
+		nextCursor = startAt.UnixMicro()
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
+	slog.Info("next cursor", "cursor", nextCursor, "addr", &nextCursor)
+	if err := rows.Err(); err != nil {
+		return 0, nil, 0, err
 	}
 
-	if rowsAffected < 1 {
-		return ErrEventNotCreated
+	// Reset cursor if no more results are remaining
+	if len(batch) >= int(totalCount) {
+		nextCursor = 0
 	}
 
-	return nil
-}
-
-func (r *EventModel) CreateEventDelivery(s *EventDelivery) error {
-	query := `
-    INSERT INTO hookrelay.event_delivery (id, event_id, owner_id, subscription_id, started_at, completed_at, status_code, error, latency)
-    VALUES (:id, :event_id, :owner_id, :subscription_id, :started_at, :completed_at, :status_code, :error, :latency)
-    `
-	// VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-
-	args := map[string]interface{}{
-		"id":              s.ID,
-		"event_id":        s.EventID,
-		"owner_id":        s.OwnerId,
-		"subscription_id": s.SubscriptionId,
-		"started_at":      s.StartedAt,
-		"completed_at":    s.CompletedAt,
-		"status_code":     s.StatusCode,
-		"error":           s.Error,
-		"latency":         s.Latency,
-	}
-
-	slog.Info("creating event delivery", "id", s.ID, "args", fmt.Sprintf("%s, %s, %s, %s, %s, %s, %d, %s, %.2f", s.ID, s.EventID, s.OwnerId, s.SubscriptionId, s.StartedAt, s.CompletedAt, s.StatusCode, s.Error, s.Latency))
-
-	result, err := r.db.GetDB().NamedExec(
-		query,
-		args,
-		// s.ID, s.EventID, s.OwnerId, s.SubscriptionId, s.StartedAt, s.CompletedAt, s.StatusCode, s.Error, s.Latency,
-	)
-	if err != nil {
-		slog.Error("DB error creating event delivery", "err", err)
-		return ErrEventNotCreated
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected < 1 {
-		return ErrEventNotCreated
-	}
-
-	return nil
+	return totalCount, batch, nextCursor, nil
 }

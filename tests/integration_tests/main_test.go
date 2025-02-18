@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	fmt.Println("Starting server...")
 	var wg sync.WaitGroup
 
-	app := cli.GetAppInstance()
+	cli.GetAppInstance()
 	ms := mock.InitMockHTTPServer(9092)
 	ms.StartFixedDurationServer(1 * time.Millisecond)
 	// cli.Execute()
@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	wp := worker.NewWorkerPool(app, nil)
+	wp := &worker.WorkerPool{}
 	disp := dispatcher.NewDispatcher(wp)
 	// benchmark.NewLatencyBench(disp)
 	// disp.Start()

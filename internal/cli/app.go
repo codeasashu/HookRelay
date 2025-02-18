@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"embed"
 	"log/slog"
 	"strings"
@@ -18,11 +19,14 @@ var (
 )
 
 type App struct {
-	Version  string
-	DB       database.Database
-	Logger   *slog.Logger
-	Config   *config.Config
-	IsWorker bool
+	Ctx        context.Context
+	Version    string
+	DB         database.Database
+	Logger     *slog.Logger
+	Config     *config.Config
+	IsWorker   bool
+	LegacyMode bool
+	SkipWAL    bool
 }
 
 func NewApp() *App {

@@ -1,11 +1,12 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/wal"
+	"github.com/codeasashu/HookRelay/internal/event"
 )
 
 // @TODO: Make this a linked list to support multiple workers
@@ -14,13 +15,11 @@ type WorkerPool struct {
 	queueClient *QueueClient
 }
 
-func NewWorkerPool(app *cli.App, wl wal.AbstractWAL) *WorkerPool {
-	// Pool always starts with localWorker
-	localWorker := NewLocalWorker(app, wl)
-	w := &WorkerPool{
-		localClient: localWorker.client.(*LocalClient),
-	}
-	return w
+func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) error {
+	lw := NewLocalWorker(app, callback)
+	wp.localClient = lw.client.(*LocalClient)
+	slog.Info("added local worker")
+	return nil
 }
 
 func (wp *WorkerPool) AddQueueClient() error {
@@ -65,5 +64,14 @@ func (wp *WorkerPool) Retry(job *Job) error {
 		return wp.queueClient.SendJob(job)
 	} else {
 		return errors.New("error scheduling job. no worker available")
+	}
+}
+
+func (wp *WorkerPool) Shutdown() {
+	if wp.localClient != nil {
+		wp.localClient.Stop()
+	}
+	if wp.queueClient != nil {
+		wp.queueClient.Close()
 	}
 }

@@ -234,13 +234,14 @@ func InitMetrics() *Metrics {
 	return m
 }
 
-func (m *Metrics) RecordEndToEndLatency(ev *event.EventDelivery, wrkr string) {
+func (m *Metrics) RecordEndToEndLatency(ev *event.Event, wrkr string) {
 	if !m.IsEnabled {
 		return
 	}
 
-	slog.Info("e2elatency", slog.Float64("latency_ms", ev.Latency))
-	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(ev.Latency)
+	d := time.Since(ev.CreatedAt)
+	t := float64(d) / float64(time.Millisecond)
+	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(t)
 }
 
 func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
@@ -249,7 +250,6 @@ func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
 	}
 	d := time.Since(ev.CreatedAt)
 	t := float64(d) / float64(time.Millisecond)
-	slog.Info("PreFlightLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
@@ -259,7 +259,6 @@ func (m *Metrics) RecordDispatchLatency(ev *event.Event, wrkr string) {
 	}
 	d := time.Since(ev.CreatedAt)
 	t := float64(d) / float64(time.Millisecond)
-	slog.Info("DispatchLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(t)
 }
 
