@@ -37,21 +37,15 @@ func GetDeliveriesByOwner(
 	limit uint16,
 ) (uint64, []*EventDelivery, int64, error) {
 	var totalCount uint64
-
-	fmt.Println("got event Type", eventType, *eventType, cursor)
 	// Count Query (Remains the same)
 	countQuery := `
-        SELECT COUNT(*) FROM event_delivery ed
-        INNER JOIN subscription s ON s.id = ed.subscription_id 
-        WHERE s.owner_id = ?`
+        SELECT COUNT(*) FROM event_delivery ed WHERE ed.owner_id = ?`
 
 	// Cursor-Based Query (Instead of OFFSET)
 	query := `
-        SELECT ed.id, ed.event_type, ed.payload, ed.subscription_id, 
+        SELECT ed.id, ed.event_type, ed.payload, ed.owner_id, ed.subscription_id, 
                ed.status_code, ed.error, ed.start_at, ed.complete_at
-        FROM event_delivery ed
-        INNER JOIN subscription s ON s.id = ed.subscription_id 
-        WHERE s.owner_id = ?`
+        FROM event_delivery ed WHERE ed.owner_id = ?`
 
 	countArgs := []interface{}{ownerId}
 	args := []interface{}{ownerId}
@@ -89,10 +83,6 @@ func GetDeliveriesByOwner(
 
 	query += " ORDER BY ed.start_at DESC, ed.id DESC LIMIT ?"
 	args = append(args, limit)
-
-	fmt.Println("query args", query, args)
-	fmt.Println("count args", countQuery, countArgs)
-
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("failed to query deliveries: %v", err)
@@ -104,7 +94,7 @@ func GetDeliveriesByOwner(
 	for rows.Next() {
 		var e EventDelivery
 		if err := rows.Scan(
-			&e.ID, &e.EventType, &e.Payload, &e.SubscriptionId,
+			&e.ID, &e.EventType, &e.Payload, &e.OwnerId, &e.SubscriptionId,
 			&e.StatusCode, &e.Error, &e.StartAt, &e.CompleteAt,
 		); err != nil {
 			slog.Error("failed to scan event delivery", slog.Any("error", err))

@@ -25,7 +25,11 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Preparex("INSERT INTO hookrelay.event_delivery (event_type, payload, subscription_id, status_code, error, start_at, complete_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Preparex(`
+        INSERT INTO hookrelay.event_delivery 
+        (event_type, payload, owner_id, subscription_id, status_code, error, start_at, complete_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,6 +39,7 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) {
 		_, err := stmt.Exec(
 			d.EventType,
 			d.Payload,
+			d.OwnerId,
 			d.SubscriptionId,
 			d.StatusCode,
 			d.Error,

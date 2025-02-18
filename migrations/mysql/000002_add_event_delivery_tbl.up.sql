@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS hookrelay.event_delivery (
     status_code INT,
     error TEXT,
     start_at TIMESTAMP NULL DEFAULT NULL,
-    complete_at TIMESTAMP NULL DEFAULT NULL,
+    complete_at TIMESTAMP NULL DEFAULT NULL
 );
 
 -- Optional: Add indexes for faster queries
