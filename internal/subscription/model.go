@@ -138,7 +138,10 @@ func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(eventType
 	default:
 		return nil, sql.ErrNoRows
 	}
-	rows, err := r.db.GetDB().Queryx(query, ownerID)
+
+	query += " ORDER BY created DESC LIMIT ?"
+
+	rows, err := r.db.GetDB().Queryx(query, ownerID, MaxActiveSubscriptions)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // No subscriptions found
@@ -171,12 +174,15 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 	if isLegacy {
 		return r.FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID)
 	}
+
 	query := `
     SELECT id, owner_id, target_url, target_method, target_params, target_auth, event_types, status, filters, tags, created, modified
     FROM hookrelay.subscription
     WHERE owner_id = :owner_id
     AND (JSON_CONTAINS(event_types, :event_types) OR JSON_CONTAINS(event_types, '"*"'))
 	AND status = 1
+    ORDER BY created DESC
+    LIMIT :limit
     `
 
 	if query == "" {
@@ -189,7 +195,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 		return nil, fmt.Errorf("failed to marshal event type: %v", err)
 	}
 
-	args := map[string]interface{}{"owner_id": ownerID, "event_types": eventTypeJSON}
+	args := map[string]interface{}{"owner_id": ownerID, "event_types": eventTypeJSON, "limit": MaxActiveSubscriptions}
 	rows, err := r.db.GetDB().NamedQuery(query, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -209,7 +215,7 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 
 		err := rows.Scan(
 			&s.ID, &s.OwnerId, &targetURL, &targetMethod, &targetParamsBytes, &targetAuthBytes,
-			&eventTypes, &s.Status, &filters, &tags, &s.CreatedAt, &s.CreatedAt,
+			&eventTypes, &s.Status, &filters, &tags, &s.CreatedAt, &s.ModifiedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscription: %v", err)

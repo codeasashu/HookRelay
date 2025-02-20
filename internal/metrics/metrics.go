@@ -18,7 +18,7 @@ import (
 type key string
 
 const (
-	MetricsContextKey key = "_minstance" // To get isntance by context key, in workers
+	MetricsContextKey key = "_minstance" // To get instance by context key, in workers
 )
 
 var (

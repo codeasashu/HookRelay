@@ -24,6 +24,7 @@ type Subscription struct {
 	Tags       []string        `json:"tags"`
 	Status     int             `json:"status" db:"status"`
 	CreatedAt  time.Time       `json:"created_at"`
+	ModifiedAt time.Time       `json:"modified_at"`
 }
 
 type ReadSubscription struct {

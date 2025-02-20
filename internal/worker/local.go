@@ -67,7 +67,7 @@ func (c *LocalClient) CurrentCapacity() int {
 }
 
 func (c *LocalClient) IsNearlyFull() bool {
-	// Returns true if the queue is more than 40% full (coz only half the queue is alloted to JobQueue)
+	// Returns true if the queue is more than 40% full (coz only half the queue is allotted to JobQueue)
 	slog.Info("queue_size", "job_queue", len(c.JobQueue), "config", config.HRConfig.LocalWorker.QueueSize)
 	return len(c.JobQueue) > (config.HRConfig.LocalWorker.QueueSize/10)*4
 }
@@ -98,7 +98,7 @@ func (c *LocalClient) scaleThreads(interval time.Duration) {
 
 			if queueLen > 0 && (c.MaxThreads == -1 || active < int32(c.MaxThreads)) {
 				// Increase threads if the queue is filling up.
-				slog.Debug("increasing worker threas", "worker_id", c.ID)
+				slog.Debug("increasing worker threads", "worker_id", c.ID)
 				c.launchThread()
 			} else if queueLen == 0 && active > int32(c.MinThreads) {
 				// Reduce threads if the queue is empty.

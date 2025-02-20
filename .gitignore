@@ -29,3 +29,7 @@ chatgpt/
 config.toml
 *.config.toml
 *.sqlite*
+
+# IDE
+.lh/
+.idea/

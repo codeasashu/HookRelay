@@ -78,7 +78,7 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		return 0, errors.New("missing HTTP details in target")
 	}
 
-	// conisder DefaultMethod if no method is provided
+	// consider DefaultMethod if no method is provided
 	if target.HTTPDetails.Method == "" {
 		target.HTTPDetails.Method = DefaultMethod
 	}
