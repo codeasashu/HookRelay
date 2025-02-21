@@ -3,7 +3,9 @@ package config
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
+	"net/url"
 
 	"github.com/spf13/viper"
 )
@@ -17,7 +19,7 @@ http.queue_size = 1024
 http.workers = 4
 
 [api]
-port = 8081
+addr = ":8081"
 
 [metrics]
 enabled = true
@@ -76,6 +78,33 @@ db.port = 3306
 `
 )
 
+type DatabaseProvider string
+
+const (
+	PostgresDatabaseProvider DatabaseProvider = "postgres"
+	MySQLDatabaseProvider    DatabaseProvider = "mysql"
+)
+
+type DatabaseConfig struct {
+	Type DatabaseProvider `json:"type" mapstructure:"type"`
+
+	Scheme   string `json:"scheme" mapstructure:"scheme"`
+	Host     string `json:"host" mapstructure:"host"`
+	Username string `json:"username" mapstructure:"username"`
+	Password string `json:"password" mapstructure:"password"`
+	Database string `json:"database" mapstructure:"database"`
+	Options  string `json:"options" mapstructure:"options"`
+	Port     int    `json:"port" mapstructure:"port"`
+
+	DSN string `json:"dsn" mapstructure:"dsn"`
+
+	SetMaxOpenConnections int `json:"max_open_conn" mapstructure:"max_open_conn"`
+	SetMaxIdleConnections int `json:"max_idle_conn" mapstructure:"max_idle_conn"`
+	SetConnMaxLifetime    int `json:"conn_max_lifetime" mapstructure:"conn_max_lifetime"`
+
+	ReadReplicas []DatabaseConfig `json:"read_replicas" mapstructure:"read_replicas"`
+}
+
 type HttpListenerConfig struct {
 	QueueSize int `mapstructure:"queue_size"`
 	Workers   int `mapstructure:"workers"`
@@ -86,7 +115,7 @@ type ListenerConfig struct {
 }
 
 type ApiConfig struct {
-	Port int `mapstructure:"port"`
+	Addr string `mapstructure:"addr"`
 }
 
 type LocalWorkerConfig struct {
@@ -125,11 +154,11 @@ type HttpTargetConfig struct {
 }
 
 type SubscriptionConfig struct {
-	Database DatabaseConfiguration `mapstructure:"db"`
+	Database DatabaseConfig `mapstructure:"db"`
 }
 
 type DeliveryConfig struct {
-	Database DatabaseConfiguration `mapstructure:"db"`
+	Database DatabaseConfig `mapstructure:"db"`
 }
 
 type Config struct {
@@ -151,9 +180,8 @@ type Config struct {
 	HttpTarget HttpTargetConfig `json:"http_target" mapstructure:"http_target"`
 }
 
-var HRConfig Config
-
 func LoadConfig(customConfigPath string) (*Config, error) {
+	var cfg Config
 	v := viper.New()
 
 	// Set default configuration
@@ -181,10 +209,37 @@ func LoadConfig(customConfigPath string) (*Config, error) {
 	}
 
 	// Unmarshal the configuration into the Config struct
-	if err := v.Unmarshal(&HRConfig); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		log.Printf("error unmarshaling configuration: %s", err)
 		return nil, errors.New("error unmarshaling configuration")
 	}
 
-	return &HRConfig, nil
+	return &cfg, nil
+}
+
+func (dc DatabaseConfig) BuildDsn() string {
+	if len(dc.DSN) > 0 {
+		return dc.DSN
+	}
+	if dc.Scheme == "" {
+		return ""
+	}
+
+	authPart := ""
+	if dc.Username != "" || dc.Password != "" {
+		authPrefix := url.UserPassword(dc.Username, dc.Password)
+		authPart = fmt.Sprintf("%s@", authPrefix)
+	}
+
+	dbPart := ""
+	if dc.Database != "" {
+		dbPart = fmt.Sprintf("/%s", dc.Database)
+	}
+
+	optPart := ""
+	if dc.Options != "" {
+		optPart = fmt.Sprintf("?%s", dc.Options)
+	}
+
+	return fmt.Sprintf("%s://%s%s:%d%s%s", dc.Scheme, authPart, dc.Host, dc.Port, dbPart, optPart)
 }

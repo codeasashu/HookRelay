@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"github.com/codeasashu/HookRelay/internal/config"
 )
 
 type (
@@ -26,17 +24,12 @@ type Target struct {
 	Type         TargetType          `json:"type"`
 	HTTPDetails  *HTTPDetails        `json:"http_details,omitempty"`
 	HTTPResponse *HTTPTargetResponse `json:"http_response,omitempty"`
-	MaxRetries   uint16              `json:"max_retries,omitempty"`
 	// WebSocketDetails *WebSocketDetails `json:"websocket_details,omitempty"`
 }
 
 func NewHTTPTarget(url string, method string, headers map[string]string, basicAuth HTTPBasicAuth) (*Target, error) {
 	if url == "" {
 		return nil, errors.New("url is empty")
-	}
-	maxRetries := config.HRConfig.HttpTarget.MaxRetries
-	if maxRetries == 0 {
-		maxRetries = 3
 	}
 	t := &Target{
 		Type: TargetHTTP,
@@ -46,7 +39,6 @@ func NewHTTPTarget(url string, method string, headers map[string]string, basicAu
 			Headers:   headers,
 			BasicAuth: basicAuth,
 		},
-		MaxRetries: maxRetries,
 	}
 
 	// Log HTTP request details safely
@@ -64,7 +56,6 @@ func NewHTTPTarget(url string, method string, headers map[string]string, basicAu
 		"method", method,
 		"url", url,
 		"headers", fmt.Sprintf("%+v", sanitizedHeaders),
-		"maxRetries", maxRetries,
 	}
 	if basicAuth.Username != "" {
 		logAttrs = append(logAttrs, "basic_auth_username", basicAuth.Username)

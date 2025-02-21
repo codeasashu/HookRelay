@@ -3,13 +3,10 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"log/slog"
 
-	"github.com/codeasashu/HookRelay/internal/config"
-	"github.com/codeasashu/HookRelay/internal/event"
-	"github.com/codeasashu/HookRelay/internal/metrics"
-	"github.com/codeasashu/HookRelay/internal/wal"
+	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/hibiken/asynq"
 
 	"github.com/oklog/ulid/v2"
@@ -20,30 +17,37 @@ const (
 	QueueName         = "hookrelay"
 )
 
-type QueueClient struct {
+type (
+	UnmarshalerMap map[string]func([]byte) (Task, error)
+	MarshalerMap   map[string]func(Task) ([]byte, error)
+)
+
+type QueueWorker struct {
+	ID     string
 	ctx    context.Context
 	client *asynq.Client
+
+	marshalers MarshalerMap
 }
 
-func NewQueueWorker() *Worker {
+func NewQueueWorker(f *app.HookRelayApp, marshalers MarshalerMap) *QueueWorker {
 	client := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:     config.HRConfig.QueueWorker.Addr,
-		DB:       config.HRConfig.QueueWorker.Db,
-		Password: config.HRConfig.QueueWorker.Password,
-		Username: config.HRConfig.QueueWorker.Username,
+		Addr:     f.Cfg.QueueWorker.Addr,
+		DB:       f.Cfg.QueueWorker.Db,
+		Password: f.Cfg.QueueWorker.Password,
+		Username: f.Cfg.QueueWorker.Username,
 	})
 
 	slog.Info("readying remote queue")
-	return &Worker{
-		ID: ulid.Make().String(),
-		client: &QueueClient{
-			ctx:    context.Background(),
-			client: client,
-		},
+	return &QueueWorker{
+		ID:         ulid.Make().String(),
+		ctx:        context.Background(),
+		client:     client,
+		marshalers: marshalers,
 	}
 }
 
-func (c *QueueClient) IsReady() bool {
+func (c *QueueWorker) IsReady() bool {
 	if c.client != nil {
 		if err := c.client.Ping(); err == nil {
 			return true
@@ -52,21 +56,24 @@ func (c *QueueClient) IsReady() bool {
 	return false
 }
 
-func (c *QueueClient) Close() {
+func (c *QueueWorker) Ping() error {
+	return c.client.Ping()
+}
+
+func (c *QueueWorker) Shutdown() {
 	if c.client != nil {
 		c.client.Close()
 	}
 }
 
-func (c *QueueClient) SendJob(job *Job) error {
-	t, err := NewQueueJob(job)
+func (c *QueueWorker) Enqueue(job Task) error {
+	payload, err := c.marshalers[TypeEventDelivery](job)
 	if err != nil {
-		slog.Error("error creating redis task", "err", err)
+		slog.Error("error creating queue task", "err", err)
 		return err
 	}
-	info, err := c.client.Enqueue(
-		t, asynq.Queue(QueueName), asynq.MaxRetry(int(job.Subscription.Target.MaxRetries-job.numDeliveries)-1),
-	)
+	t := asynq.NewTask(TypeEventDelivery, payload)
+	info, err := c.client.Enqueue(t, asynq.Queue(QueueName))
 	if err != nil {
 		slog.Error("could not enqueue task", "err", err)
 		return err
@@ -75,7 +82,7 @@ func (c *QueueClient) SendJob(job *Job) error {
 	return nil
 }
 
-func NewQueueJob(job *Job) (*asynq.Task, error) {
+func NewQueueJob(job Task) (*asynq.Task, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return nil, err
@@ -83,25 +90,23 @@ func NewQueueJob(job *Job) (*asynq.Task, error) {
 	return asynq.NewTask(TypeEventDelivery, payload), nil
 }
 
-func HandleQueueJob(ctx context.Context, t *asynq.Task, accounting *wal.Accounting) error {
-	var j Job
-	m := ctx.Value(metrics.MetricsContextKey).(*metrics.Metrics)
-	if err := json.Unmarshal(t.Payload(), &j); err != nil {
-		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
-	}
-	m.RecordDispatchLatency(j.Event, "asynq")
-	slog.Info("Processing job", "job_id", j.ID, "event_id", j.Event.UID)
-	_, err := j.Exec() // Update job result
-	m.RecordEndToEndLatency(j.Event, "asynq")
+func HandleQueueJob(ctx context.Context, t *asynq.Task, unmarshalerMap UnmarshalerMap, callback func([]Task) error) error {
+	if unmarshaler, ok := unmarshalerMap[t.Type()]; ok {
+		j, err := unmarshaler(t.Payload())
+		if err != nil {
+			return err
+		}
 
-	// Add event delivery to result processing queue
-	// @TODO: Batch the inserts or use channels
-	accounting.CreateDeliveries([]*event.EventDelivery{j.Result})
-	// wl.LogEventDelivery(j.Result)
-	if err != nil {
-		slog.Error("error processing job", "job_id", j.ID, "error", err)
-		return err
+		slog.Info("Processing job", "job_id", j, "event_id", j)
+		exeErr := j.Execute() // Update job result
+
+		callback([]Task{j})
+		if exeErr != nil {
+			slog.Error("error processing job", "job_id", j, "error", err)
+			return err
+		}
+		slog.Info("job complete. sending result", "job_id", j)
+		return nil
 	}
-	slog.Info("job complete. sending result", "job_id", j.ID)
-	return nil
+	return errors.ErrUnsupported
 }

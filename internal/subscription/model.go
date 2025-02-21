@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/codeasashu/HookRelay/internal/config"
-	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/target"
 )
 
@@ -19,21 +17,13 @@ const (
 	SubscriptionActive  SubscriptionStatus = 1
 )
 
-type SubscriptionModel struct {
-	db database.Database
-}
-
 var (
 	ErrSubscriptionNotCreated = errors.New("subscription could not be created")
 	ErrSubscriptionNotFound   = errors.New("subscription could not be found")
 	ErrSubscriptionExists     = errors.New("subscription already exists")
 )
 
-func NewSubscriptionModel(db database.Database) *SubscriptionModel {
-	return &SubscriptionModel{db: db}
-}
-
-func (r *SubscriptionModel) Validate(s *Subscription) error {
+func (r *Subscription) Validate(s *Subscriber) error {
 	if err := target.ValidateTarget(*s.Target); err != nil {
 		slog.Error("error validating subscription target", "err", err, "target", *s.Target)
 		return err
@@ -47,7 +37,38 @@ func (r *SubscriptionModel) Validate(s *Subscription) error {
 	return nil
 }
 
-func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
+func (r *Subscription) HasSubscriptions(subscriptionId string) (bool, error) {
+	query := `
+    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=:id AND status = 1
+    `
+
+	args := map[string]interface{}{"id": subscriptionId}
+
+	var count int
+	nstmt, err := r.db.GetDB().PrepareNamed(query)
+	if err != nil {
+		slog.Error("error in fetching subscription count", "err", err)
+		return false, err
+	}
+	defer nstmt.Close()
+
+	err = nstmt.Get(&count, args)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil // No subscriptions found, no error
+		}
+		slog.Error("error in fetching subscription count", "err", err)
+		return false, err // Database error
+	}
+
+	if count > 0 {
+		return true, ErrSubscriptionExists
+	}
+
+	return false, nil // No subscriptions found
+}
+
+func (r *Subscription) CreateSubscription(s *Subscriber) error {
 	if err := r.Validate(s); err != nil {
 		slog.Error("error validating subscription", "err", err)
 		return err
@@ -122,7 +143,7 @@ func (r *SubscriptionModel) CreateSubscription(s *Subscription) error {
 	return nil
 }
 
-func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscription, error) {
+func (r *Subscription) FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscriber, error) {
 	// @TODO: remove service_type check to fetch all (service_type = 1 is aftercall, service_type = 2 is incall)
 	query := `
     SELECT id, company_id, url, request, simple, headers, auth, credentials, service_type, is_active, created FROM api_pushes
@@ -148,7 +169,7 @@ func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(eventType
 	}
 	defer rows.Close()
 
-	var subscriptions []Subscription
+	var subscriptions []Subscriber
 	for rows.Next() {
 		var s LegacySubscription
 		err := rows.StructScan(&s)
@@ -167,7 +188,7 @@ func (r *SubscriptionModel) FindLegacySubscriptionsByEventTypeAndOwner(eventType
 	return subscriptions, nil
 }
 
-func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string, isLegacy bool) ([]Subscription, error) {
+func (r *Subscription) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string, isLegacy bool) ([]Subscriber, error) {
 	if isLegacy {
 		return r.FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID)
 	}
@@ -178,10 +199,6 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
     AND (JSON_CONTAINS(event_types, :event_types) OR JSON_CONTAINS(event_types, '"*"'))
 	AND status = 1
     `
-
-	if query == "" {
-		return nil, fmt.Errorf("unsupported database type: %s", config.HRConfig.Subscription.Database.Type)
-	}
 
 	// Convert the event_type into a JSON array for the query
 	eventTypeJSON, err := json.Marshal([]string{eventType})
@@ -200,9 +217,9 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 	}
 	defer rows.Close()
 
-	var subscriptions []Subscription
+	var subscriptions []Subscriber
 	for rows.Next() {
-		var s Subscription
+		var s Subscriber
 		var targetURL sql.NullString
 		var targetMethod sql.NullString
 		var targetParamsBytes, targetAuthBytes, eventTypes, filters, tags []byte
@@ -255,35 +272,4 @@ func (r *SubscriptionModel) FindSubscriptionsByEventTypeAndOwner(eventType, owne
 		subscriptions = append(subscriptions, s)
 	}
 	return subscriptions, nil
-}
-
-func (r *SubscriptionModel) HasSubscriptions(subscriptionId string) (bool, error) {
-	query := `
-    SELECT COUNT(*) FROM hookrelay.subscription WHERE id=:id AND status = 1
-    `
-
-	args := map[string]interface{}{"id": subscriptionId}
-
-	var count int
-	nstmt, err := r.db.GetDB().PrepareNamed(query)
-	if err != nil {
-		slog.Error("error in fetching subscription count", "err", err)
-		return false, err
-	}
-	defer nstmt.Close()
-
-	err = nstmt.Get(&count, args)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil // No subscriptions found, no error
-		}
-		slog.Error("error in fetching subscription count", "err", err)
-		return false, err // Database error
-	}
-
-	if count > 0 {
-		return true, ErrSubscriptionExists
-	}
-
-	return false, nil // No subscriptions found
 }

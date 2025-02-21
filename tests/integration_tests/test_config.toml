@@ -1,12 +1,54 @@
+[worker]
+scan_duration = 100
+min_threads = 50
+max_threads = 100
+
+
+# Configuration file for HookRelay
+# http listener config
 [listener]
-http.port = 8082
-http.queue_size = 1024
+http.queue_size = 512
 http.workers = 2
 
 [api]
 port = 8081
 
-[worker]
+[local_worker]
 scan_duration = 100
-min_threads = 50
-max_threads = 100
+min_threads = 1
+max_threads = 2
+result_handlers_threads = 1
+queue_size = 2
+
+[queue_worker]
+addr = "localhost:6379"
+db = 2
+concurrency = 5000
+
+[metrics]
+enabled = false
+# worker_addr = ":2113"
+
+[logging]
+log_level = "debug"
+
+[subscription]
+db.scheme = "mysql"
+db.host = "localhost"
+db.username = "ashutosh"
+db.password = "12345678"
+db.database = "hookrelay"
+db.options = "connect_timeout=30"
+db.port = 3306
+
+[delivery]
+db.scheme = "mysql"
+db.host = "localhost"
+db.username = "ashutosh"
+db.password = "12345678"
+db.database = "hookrelay"
+db.options = "connect_timeout=30"
+db.port = 3306
+
+[wal]
+path = "/tmp/hookrelay"

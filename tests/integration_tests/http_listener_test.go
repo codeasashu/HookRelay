@@ -1,14 +1,20 @@
 package integrationtests
 
-//	func TestListenerStarts(t *testing.T) {
-//		t.Run("ServerIsRunning", func(t *testing.T) {
-//			conn, err := net.Dial("tcp", "127.0.0.1:8082")
-//			if err != nil {
-//				t.Fatalf("Failed to connect to server: %v", err)
-//			}
-//			conn.Close()
-//		})
-//	}
+import (
+	"net"
+	"testing"
+)
+
+func TestListenerStarts(t *testing.T) {
+	t.Run("ServerIsRunning", func(t *testing.T) {
+		conn, err := net.Dial("tcp", "127.0.0.1:8081")
+		if err != nil {
+			t.Fatalf("Failed to connect to server: %v", err)
+		}
+		conn.Close()
+	})
+}
+
 //
 //	func TestSendEvent(t *testing.T) {
 //		ec := NewHTTPEventClient()

@@ -1,77 +1,128 @@
 package worker
 
 import (
-	"context"
 	"errors"
 	"log/slog"
+	"sync"
 
-	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/app"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 )
+
+var (
+	ErrTooManyRetry = errors.New("job: too many retries")
+	ErrRemoteJob    = errors.New("job: remote job error")
+)
+
+//	type Job struct {
+//		ID            string
+//		Event         *event.Event
+//		Subscription  *subscription.Subscription
+//		Result        *event.EventDelivery
+//		numDeliveries uint16
+//		wp            *WorkerPool
+//		isRetrying    bool
+//	}
+//
+//	type WorkerClient interface {
+//		SendJob(job *delivery.EventDelivery) error
+//	}
+//
+//	type Worker struct {
+//		ID     string
+//		client WorkerClient
+//	}
+//
+//	func NewWorker() *Worker {
+//		return &Worker{
+//			ID: ulid.Make().String(),
+//		}
+//	}
 
 // @TODO: Make this a linked list to support multiple workers
 type WorkerPool struct {
-	localClient *LocalClient
-	queueClient *QueueClient
+	mu          *sync.Mutex
+	metrics     *metrics.Metrics
+	localWorker Worker
+	queueWorker Worker
 }
 
-func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) error {
-	lw := NewLocalWorker(app, callback)
-	wp.localClient = lw.client.(*LocalClient)
+type Worker interface {
+	Enqueue(t Task) error
+	Ping() error
+	// IsNearlyFull() bool
+	Shutdown()
+	IsReady() bool
+}
+
+type Task interface {
+	GetID() string
+	Execute() error
+	Retries() int
+}
+
+func InitPool(f *app.HookRelayApp) *WorkerPool {
+	wp := &WorkerPool{
+		mu:      &sync.Mutex{},
+		metrics: f.Metrics,
+	}
+	return wp
+}
+
+func CreateLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func(tasks []Task) error) *LocalWorker {
+	lw := NewLocalWorker(f, wp, callback)
+	return lw
+}
+
+func CreateQueueWorker(f *app.HookRelayApp, marshaler MarshalerMap, callback func([]Task) error) *QueueWorker {
+	lw := NewQueueWorker(f, marshaler)
+	return lw
+}
+
+func (wp *WorkerPool) SetLocalClient(c Worker) error {
+	wp.localWorker = c
 	slog.Info("added local worker")
 	return nil
 }
 
-func (wp *WorkerPool) AddQueueClient() error {
-	qc := NewQueueWorker()
-	wp.queueClient = qc.client.(*QueueClient)
-	if err := wp.queueClient.client.Ping(); err != nil {
+func (wp *WorkerPool) SetQueueClient(c Worker) error {
+	if err := c.Ping(); err != nil {
 		slog.Warn("remote worker queue is not connected. only local workers will be used", "err", err)
 		return err
 	}
-	slog.Info("remote worker queue is connected")
+	wp.queueWorker = c
+	slog.Info("queue worker client is connected")
 	return nil
 }
 
-func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
+func (wp *WorkerPool) ShouldUseRemote(job Task, isRetrying bool) bool {
 	// Checks if jobs should be scheduled to remote worker
 	// based on several criterias
-	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
-	remoteIsReady := wp.queueClient != nil
-	// remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
-	return (localWorkerFull && remoteIsReady) || (job.isRetrying && remoteIsReady)
+	remoteIsReady := wp.queueWorker != nil && wp.queueWorker.IsReady()
+	localIsReady := wp.localWorker != nil && wp.localWorker.IsReady()
+	if isRetrying {
+		return remoteIsReady
+	}
+	return remoteIsReady && !localIsReady
 }
 
-func (wp *WorkerPool) Schedule(job *Job) error {
-	job.wp = wp
-	if wp.ShouldUseRemote(job) {
+func (wp *WorkerPool) Schedule(job Task, isRetrying bool) error {
+	if wp.ShouldUseRemote(job, isRetrying) {
 		slog.Info("scheduling job to queue worker", "job", job)
-		return wp.queueClient.SendJob(job)
+		return wp.queueWorker.Enqueue(job)
 	}
-	if wp.localClient != nil {
+	if wp.localWorker != nil {
 		slog.Info("scheduling job to local worker", "job", job)
-		return wp.localClient.SendJob(job)
+		return wp.localWorker.Enqueue(job)
 	}
 	return errors.New("error scheduling job. no worker available")
 }
 
-func (wp *WorkerPool) Retry(job *Job) error {
-	if wp.localClient != nil && !wp.localClient.IsNearlyFull() {
-		slog.Info("scheduling job to local worker", "job", job)
-		return wp.localClient.SendJob(job)
-	} else if wp.queueClient != nil && wp.queueClient.IsReady() {
-		slog.Info("scheduling job to queue worker", "job", job)
-		return wp.queueClient.SendJob(job)
-	} else {
-		return errors.New("error scheduling job. no worker available")
-	}
-}
-
 func (wp *WorkerPool) Shutdown() {
-	if wp.localClient != nil {
-		wp.localClient.Stop()
+	if wp.localWorker != nil {
+		wp.localWorker.Shutdown()
 	}
-	if wp.queueClient != nil {
-		wp.queueClient.Close()
+	if wp.queueWorker != nil {
+		wp.queueWorker.Shutdown()
 	}
 }

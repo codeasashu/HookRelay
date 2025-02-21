@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/hibiken/asynq"
@@ -22,14 +22,14 @@ const (
 )
 
 var (
-	m    *Metrics
-	reg  *prometheus.Registry
-	re   sync.Once
-	once sync.Once
+	reg *prometheus.Registry
+	re  sync.Once
 )
 
 type Metrics struct {
 	IsEnabled bool
+	Registery *prometheus.Registry
+	router    *gin.Engine
 
 	// Event Metrics
 	IngestTotal          *prometheus.CounterVec
@@ -50,27 +50,14 @@ type Metrics struct {
 	WorkerThreadsTotal *prometheus.GaugeVec
 }
 
-func GetDPInstance() *Metrics {
-	once.Do(func() {
-		m = newMetrics(Reg())
-	})
-	return m
-}
-
-func newMetrics(pr prometheus.Registerer) *Metrics {
-	m := InitMetrics()
-	app := cli.GetAppInstance()
+func NewMetrics(cfg *config.MetricsConfig) *Metrics {
+	m := InitMetrics(cfg)
 
 	if m.IsEnabled {
-		pr.MustRegister(
+		m.Registery.MustRegister(
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 			collectors.NewGoCollector(),
-		)
-	}
-
-	if !app.IsWorker && m.IsEnabled {
-		pr.MustRegister(
 			m.IngestTotal,
 			m.IngestLatency,
 			m.TotalSubscriptions,
@@ -87,25 +74,25 @@ func newMetrics(pr prometheus.Registerer) *Metrics {
 			m.WorkerThreadsTotal,
 		)
 	}
-
-	if app.IsWorker && m.IsEnabled {
-		inspector := asynq.NewInspector(asynq.RedisClientOpt{
-			Addr:     config.HRConfig.QueueWorker.Addr,
-			DB:       config.HRConfig.QueueWorker.Db,
-			Password: config.HRConfig.QueueWorker.Password,
-			Username: config.HRConfig.QueueWorker.Username,
-		})
-
-		pr.MustRegister(
-			m.IngestConsumedTotal,
-			m.IngestErrorsTotal,
-			m.IngestSuccessTotal,
-			m.EventDispatchLatency,
-			m.EventDeliveryLatency,
-			qmetrics.NewQueueMetricsCollector(inspector),
-		)
-	}
 	return m
+}
+
+func (m *Metrics) RegisterWorkerMetrics(cfg *config.QueueWorkerConfig) {
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{
+		Addr:     cfg.Addr,
+		DB:       cfg.Db,
+		Password: cfg.Password,
+		Username: cfg.Username,
+	})
+	qw := qmetrics.NewQueueMetricsCollector(inspector)
+	m.Registery.MustRegister(
+		m.IngestConsumedTotal,
+		m.IngestErrorsTotal,
+		m.IngestSuccessTotal,
+		m.EventDispatchLatency,
+		m.EventDeliveryLatency,
+		qw,
+	)
 }
 
 const (
@@ -120,8 +107,8 @@ const (
 	workerLabel           = "worker"
 )
 
-func InitMetrics() *Metrics {
-	if !config.HRConfig.Metrics.Enabled {
+func InitMetrics(cfg *config.MetricsConfig) *Metrics {
+	if !cfg.Enabled {
 		return &Metrics{
 			IsEnabled: false,
 		}
@@ -129,6 +116,7 @@ func InitMetrics() *Metrics {
 
 	m := &Metrics{
 		IsEnabled: true,
+		Registery: Reg(),
 
 		IngestTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -253,20 +241,20 @@ func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
 	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
 }
 
-func (m *Metrics) RecordDispatchLatency(ev *event.Event, wrkr string) {
+func (m *Metrics) RecordDispatchLatency(createdAt *time.Time, wrkr string) {
 	if !m.IsEnabled {
 		return
 	}
-	d := time.Since(ev.CreatedAt)
+	d := time.Since(*createdAt)
 	t := float64(d) / float64(time.Millisecond)
 	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(t)
 }
 
-func (m *Metrics) RecordIngestLatency(ev *event.Event) {
+func (m *Metrics) RecordIngestLatency(createdAt time.Time) {
 	if !m.IsEnabled {
 		return
 	}
-	d := time.Since(ev.CreatedAt)
+	d := time.Since(createdAt)
 	t := float64(d) / float64(time.Millisecond)
 	slog.Info("IngestLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.IngestLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)

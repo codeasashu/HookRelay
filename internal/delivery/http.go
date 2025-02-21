@@ -2,37 +2,64 @@ package delivery
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
-	"github.com/codeasashu/HookRelay/internal/api"
+	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/database"
-	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/wal"
+	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 )
 
-func AddRoutes(server *api.ApiServer, db database.Database) {
-	{
-		v1 := server.Router.Group("/delivery")
-		v1.GET(":owner_id", getDeliveriesHandler(db))
-	}
+type (
+	EventDeliveryStatus string
+)
+
+const (
+	// ScheduledEventStatus when an Event has been scheduled for delivery
+	ScheduledEventStatus  EventDeliveryStatus = "Scheduled"
+	ProcessingEventStatus EventDeliveryStatus = "Processing"
+	DiscardedEventStatus  EventDeliveryStatus = "Discarded"
+	FailureEventStatus    EventDeliveryStatus = "Failure"
+	SuccessEventStatus    EventDeliveryStatus = "Success"
+	RetryEventStatus      EventDeliveryStatus = "Retry"
+)
+
+type HTTPDelivery struct {
+	router  *gin.Engine
+	metrics *metrics.Metrics
+	db      database.Database
+	wp      *worker.WorkerPool
+	wl      wal.AbstractWAL
 }
 
-//	func createDeliveryHandler(db database.Database) gin.HandlerFunc {
-//		return func(c *gin.Context) {
-//			ownerId := c.Param("owner_id")
-//			if ownerId == "" {
-//				c.JSON(400, gin.H{"status": "error", "error": "Invalid owner id"})
-//				return
-//			}
-//			deliveries, err := event.GetDeliveriesByOwner(db.GetDB(), ownerId, 10, 0)
-//			if err != nil {
-//				c.JSON(500, gin.H{"status": "error", "error": err.Error()})
-//				return
-//			}
-//			c.JSON(200, gin.H{"status": "success", "deliveries": deliveries})
-//		}
+func NewHTTPDelivery(a *app.HookRelayApp, wp *worker.WorkerPool) (*HTTPDelivery, error) {
+	return &HTTPDelivery{db: a.DeliveryDb, router: a.Router, metrics: a.Metrics, wp: wp, wl: a.WAL}, nil
+}
+
+//	func (d *HTTPDelivery) GetDB() database.Database {
+//		return d.db
 //	}
+//
+//	func (d *HTTPDelivery) GetWAL() wal.AbstractWAL {
+//		return d.wl
+//	}
+func (d *HTTPDelivery) Schedule(job *EventDelivery) error {
+	slog.Info("scheduling job", "dd", job.EventType)
+	return d.wp.Schedule(job, false)
+}
+
+func (d *HTTPDelivery) InitApiRoutes() {
+	{
+		v1 := d.router.Group("/delivery")
+		v1.GET(":owner_id", getDeliveriesHandler(d.db))
+	}
+}
 
 func parseTimeParam(param string, endOfDay bool) (*time.Time, error) {
 	if param == "" {
@@ -81,7 +108,7 @@ func getDeliveriesHandler(db database.Database) gin.HandlerFunc {
 			return
 		}
 
-		totalCount, deliveries, nextCursor, err := event.GetDeliveriesByOwner(
+		totalCount, deliveries, nextCursor, err := GetDeliveriesByOwner(
 			db.GetDB(), ownerId, &eventType, createdAtGte, createdAtLte, int64(cursor), uint16(limit),
 		)
 		if err != nil {

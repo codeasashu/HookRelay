@@ -1,190 +1,37 @@
-package main
+package cmd
 
 import (
-	"context"
-	"log/slog"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
+	"fmt"
 
-	"github.com/codeasashu/HookRelay/internal/api"
-	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/config"
-	"github.com/codeasashu/HookRelay/internal/database"
-	"github.com/codeasashu/HookRelay/internal/dispatcher"
-	"github.com/codeasashu/HookRelay/internal/event"
-	"github.com/codeasashu/HookRelay/internal/logger"
-	"github.com/codeasashu/HookRelay/internal/metrics"
-	"github.com/codeasashu/HookRelay/internal/wal"
-	wrkr "github.com/codeasashu/HookRelay/internal/worker"
-	"github.com/codeasashu/HookRelay/pkg/delivery"
-	"github.com/codeasashu/HookRelay/pkg/listener"
-	"github.com/codeasashu/HookRelay/pkg/subscription"
-	"github.com/codeasashu/HookRelay/pkg/worker"
-
-	"golang.org/x/sys/unix"
+	"github.com/spf13/cobra"
 )
 
-var (
-	sigs       chan os.Signal
-	deliveryDb database.Database
-)
-
-func main() {
-	// Create some signals for graceful shutdown
-	sigs = make(chan os.Signal, 1)
-	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT, unix.SIGHUP)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
-	defer stop()
-
-	app := initCLI(ctx)
-	slog.SetDefault(logger.New()) // Init logging
-	metrics.GetDPInstance()       // Init metrics
-
-	initDbs(app)
-	accounting := wal.NewAccounting(deliveryDb) // Init accounting
-
-	if app.IsWorker {
-		startWorkerQueueMode(ctx, accounting)
-	} else {
-		startServerMode(app, ctx, accounting)
-	}
-}
-
-func initCLI(ctx context.Context) *cli.App {
-	app := cli.GetAppInstance()
-	app.Logger = slog.Default()
-	c := cli.NewCli(app)
-	_, err := c.Setup()
-	if err != nil {
-		slog.Error("Error: ", "err", err)
-		os.Exit(1)
-	}
-	app.Ctx = ctx
-	return app
-}
-
-func initDbs(app *cli.App) {
-	// Init Remote DB
-	// db, err := database.NewPostgreSQLStorage()
-	db, err := database.NewMySQLStorage(config.HRConfig.Subscription.Database)
-	if err != nil {
-		slog.Error("error connecting to db", "err", err)
-		os.Exit(1)
-	}
-	app.DB = db
-
-	// Delivery DB
-	deliveryDb, err = database.NewMySQLStorage(config.HRConfig.Delivery.Database)
-	if err != nil {
-		slog.Warn("error connecting to delivery db, accounting will not work", "err", err)
-	}
-}
-
-func startWorkerQueueMode(ctx context.Context, accounting *wal.Accounting) {
-	slog.Info("staring queue worker")
-	wrk, err := worker.StartQueueWorker(ctx, accounting)
-	if err != nil {
-		return
+func NewCLI(appVersion string) *cobra.Command {
+	if appVersion == "" {
+		appVersion = "(unknown)"
 	}
 
-	// Wait for termination signal.
-	<-sigs
+	rootCmd := &cobra.Command{
+		Use:           "hookrelay",
+		Short:         "Webhook Relay",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			if version, _ := cmd.Flags().GetBool("version"); version {
+				fmt.Println(appVersion)
+				return
+			}
 
-	slog.Info("shutting down worker...")
-	wrk.Shutdown()
-}
-
-func initWAL(accounting *wal.Accounting) wal.AbstractWAL {
-	wl := wal.NewSQLiteWAL()
-
-	if err := wl.Init(time.Now()); err != nil {
-		slog.Error("could not initialize WAL", slog.Any("error", err))
-		os.Exit(1)
+			cmd.Print(cmd.UsageString())
+		},
 	}
 
-	// Do accounting with WAL
-	walCallbacks := []func([]*event.EventDelivery) error{
-		accounting.CreateDeliveries,
-	}
+	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+	rootCmd.PersistentFlags().StringP("config", "c", "", "Configuration file for hookrelay")
 
-	// Init background housekeeping threads
-	wal.InitBG(wl, 100, walCallbacks)
-	return wl
-}
-
-func initServerWorkerPool(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) *wrkr.WorkerPool {
-	wp := &wrkr.WorkerPool{}
-	wp.AddLocalClient(app, ctx, callback)
-	// For buffered events, incase local workers are overwhelmed
-	wp.AddQueueClient()
-	return wp
-}
-
-func startServerMode(app *cli.App, ctx context.Context, accounting *wal.Accounting) {
-	serverErrCh := make(chan error, 2)
-	wg := sync.WaitGroup{}
-
-	var wp *wrkr.WorkerPool
-	var wl wal.AbstractWAL
-	var httpListenerServer *listener.HTTPListener
-	if app.SkipWAL {
-		wp = initServerWorkerPool(app, ctx, accounting.CreateDeliveries)
-	} else {
-		// WAL is initialised ONLY in the main program (and not in workers)
-		wl = initWAL(accounting)
-		// Init server WorkerPool with local workers
-		wp = initServerWorkerPool(app, ctx, wl.LogBatchEventDelivery)
-	}
-
-	disp := dispatcher.NewDispatcher(wp)
-
-	apiServer := api.InitApiServer()
-
-	// Add prometheus api
-	metrics.AddRoutes(apiServer)
-	subscription.AddRoutes(apiServer)
-	delivery.AddRoutes(apiServer, deliveryDb)
-
-	if app.SkipWAL {
-		httpListenerServer = listener.NewHTTPListener(disp, nil)
-	} else {
-		httpListenerServer = listener.NewHTTPListener(disp, wl.LogEvent)
-	}
-
-	httpListenerServer.AddRoutes(apiServer)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		go apiServer.Start(serverErrCh)
-	}()
-
-	// Run indefinitely
-	select {
-	case <-ctx.Done():
-		apiServer.Shutdown(ctx)
-		httpListenerServer.Shutdown(ctx)
-		wp.Shutdown()
-
-		wal.ShutdownBG()
-		break
-
-	case <-sigs:
-		slog.Info("shutting down server...")
-		apiServer.Shutdown(ctx)
-		httpListenerServer.Shutdown(ctx)
-		wp.Shutdown()
-
-		wal.ShutdownBG()
-		break
-	}
-
-	close(serverErrCh) // Close the channel when both servers are done
-	close(sigs)
-
-	wg.Wait()
+	rootCmd.AddCommand(ServerCmd(), WorkerCmd())
+	return rootCmd
 }

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/app"
+	"github.com/codeasashu/HookRelay/internal/delivery"
 	"github.com/codeasashu/HookRelay/internal/metrics"
-	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/hibiken/asynq"
 )
@@ -18,21 +18,20 @@ type AsynqWorker struct {
 	metricsServer *http.Server
 }
 
-func metricsWrapper() func(asynq.Handler) asynq.Handler {
-	mw := metrics.GetDPInstance()
+func metricsWrapper(f *app.HookRelayApp) func(asynq.Handler) asynq.Handler {
 	return func(next asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-			newctx := context.WithValue(ctx, metrics.MetricsContextKey, mw)
+			newctx := context.WithValue(ctx, metrics.MetricsContextKey, f.Metrics)
 			return next.ProcessTask(newctx, t)
 		})
 	}
 }
 
-func StartMetricsServer() *http.Server {
+func StartMetricsServer(f *app.HookRelayApp) *http.Server {
 	httpServeMux := http.NewServeMux()
 	httpServeMux.Handle("/metrics", metrics.GetHandler())
 	metricsSrv := &http.Server{
-		Addr:    config.HRConfig.Metrics.WorkerAddr,
+		Addr:    f.Cfg.Metrics.WorkerAddr,
 		Handler: httpServeMux,
 	}
 
@@ -47,9 +46,12 @@ func StartMetricsServer() *http.Server {
 	return metricsSrv
 }
 
-func HandleJobWithAccounting(accounting *wal.Accounting) func(context.Context, *asynq.Task) error {
+func HandleJobWithAccounting(f *app.HookRelayApp, unmarshalerMap worker.UnmarshalerMap) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
-		return worker.HandleQueueJob(ctx, t, accounting)
+		slog.Info("handling queue job")
+		err := worker.HandleQueueJob(ctx, t, unmarshalerMap, delivery.SaveDeliveries(f))
+		slog.Info("handled queue job", "err", err)
+		return err
 	}
 }
 
@@ -60,37 +62,37 @@ func (q *AsynqWorker) Shutdown() {
 	}
 }
 
-func StartQueueWorker(ctx context.Context, accounting *wal.Accounting) (*AsynqWorker, error) {
-	metricSrv := StartMetricsServer()
+func StartQueueWorker(f *app.HookRelayApp, unmarshalerMap worker.UnmarshalerMap) (*AsynqWorker, error) {
+	metricSrv := StartMetricsServer(f)
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
-			Addr:     config.HRConfig.QueueWorker.Addr,
-			DB:       config.HRConfig.QueueWorker.Db,
-			Password: config.HRConfig.QueueWorker.Password,
-			Username: config.HRConfig.QueueWorker.Username,
+			Addr:     f.Cfg.QueueWorker.Addr,
+			DB:       f.Cfg.QueueWorker.Db,
+			Password: f.Cfg.QueueWorker.Password,
+			Username: f.Cfg.QueueWorker.Username,
 		},
 		asynq.Config{
-			Concurrency: config.HRConfig.QueueWorker.Concurrency,
+			Concurrency: f.Cfg.QueueWorker.Concurrency,
 			Queues: map[string]int{
-				worker.QueueName: 1,
+				worker.QueueName: 10,
 			},
 		},
 	)
 
 	asynqWorker := &AsynqWorker{
-		ctx:           ctx,
+		ctx:           f.Ctx,
 		asyncqServer:  srv,
 		metricsServer: metricSrv,
 	}
 
 	mux := asynq.NewServeMux()
-	mux.Use(metricsWrapper())
-	mux.HandleFunc(worker.TypeEventDelivery, HandleJobWithAccounting(accounting))
+	mux.Use(metricsWrapper(f))
+	mux.HandleFunc(worker.TypeEventDelivery, HandleJobWithAccounting(f, unmarshalerMap))
 
 	// Start worker server.
 	if err := srv.Start(mux); err != nil {
 		slog.Error("Failed to start worker server, shutting down", "err", err)
-		metricSrv.Shutdown(ctx)
+		metricSrv.Shutdown(f.Ctx)
 		return nil, err
 	}
 

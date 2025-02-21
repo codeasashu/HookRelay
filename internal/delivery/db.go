@@ -1,27 +1,20 @@
-package wal
+package delivery
 
 import (
 	"log"
 	"log/slog"
 
 	"github.com/codeasashu/HookRelay/internal/database"
-	"github.com/codeasashu/HookRelay/internal/event"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/codeasashu/HookRelay/internal/worker"
 )
 
-type Accounting struct {
-	db database.Database
-}
-
-func NewAccounting(db database.Database) *Accounting {
-	return &Accounting{
-		db: db,
+func SaveBatchEventDelivery(db database.Database, deliveries []worker.Task) error {
+	if len(deliveries) == 0 {
+		return nil
 	}
-}
 
-func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) error {
-	tx, err := a.db.GetDB().Beginx()
+	// Skip delivery if delivery DB is not set
+	tx, err := db.GetDB().Beginx()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,15 +29,16 @@ func (a *Accounting) CreateDeliveries(deliveries []*event.EventDelivery) error {
 	defer stmt.Close()
 
 	for _, d := range deliveries {
+		ed := d.(*EventDelivery)
 		_, err := stmt.Exec(
-			d.EventType,
-			d.Payload,
-			d.OwnerId,
-			d.SubscriptionId,
-			d.StatusCode,
-			d.Error,
-			d.StartAt.UTC().Format("2006-01-02 15:04:05.999999"),
-			d.CompleteAt.UTC().Format("2006-01-02 15:04:05.999999"),
+			ed.EventType,
+			ed.Payload,
+			ed.OwnerId,
+			ed.SubscriptionId,
+			ed.StatusCode,
+			ed.Error,
+			ed.StartAt.UTC().Format("2006-01-02 15:04:05.999999"),
+			ed.CompleteAt.UTC().Format("2006-01-02 15:04:05.999999"),
 		)
 		if err != nil {
 			slog.Error("Error inserting to MySQL:", "err", err)
