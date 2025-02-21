@@ -8,6 +8,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+type TraceIDHeaderKeyType string
+type TraceIDKeyType string
+
+const (
+	TraceIDHeaderKey TraceIDHeaderKeyType = "X-Hookrelay-Trace-Id"
+	TraceIDKey       TraceIDKeyType       = "trace_id"
+)
+
 const (
 	DefaultConfigName     = "hookrelay"
 	DefaultConfigDir      = "."
