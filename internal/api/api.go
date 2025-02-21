@@ -10,6 +10,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/cli"
 	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/codeasashu/HookRelay/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,8 @@ func InitApiServer() *ApiServer {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+
+	router.Use(middleware.LoggerMiddleware())
 
 	return &ApiServer{
 		Router: router,

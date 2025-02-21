@@ -5,6 +5,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/api"
 	"github.com/codeasashu/HookRelay/internal/cli"
+	"github.com/codeasashu/HookRelay/internal/middleware"
 	"github.com/codeasashu/HookRelay/internal/subscription"
 	"github.com/codeasashu/HookRelay/internal/target"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,8 @@ func AddRoutes(server *api.ApiServer) {
 
 func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := middleware.FromContext(c.Request.Context())
+		logger.Info("Processing subscription request")
 		var cs *subscription.ReadSubscription
 		if err := c.ShouldBindJSON(&cs); err != nil {
 			c.JSON(400, gin.H{"status": "error", "error": err.Error()})
