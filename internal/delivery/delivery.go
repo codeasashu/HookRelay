@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
@@ -30,9 +31,9 @@ type EventDelivery struct {
 	StatusCode     int       `json:"status_code" db:"status_code"`
 	Error          string    `json:"error" db:"error"`
 
-	Subscriber *subscription.Subscriber `json:"subscriber"`
-	MaxRetries uint8                    `json:"max_retries"`
-	Retrying   bool
+	Subscriber      *subscription.Subscriber `json:"subscriber"`
+	MaxRetries      uint8                    `json:"max_retries"`
+	TotalDeliveries atomic.Int32             `json:"total_deliveries"`
 }
 
 func EventDeliveryUnmarshaler() func([]byte) (worker.Task, error) {
@@ -52,13 +53,20 @@ func EventDeliveryMarshaler() func(worker.Task) ([]byte, error) {
 		if ed.Subscriber.Target == nil {
 			slog.Error("invalid target")
 		}
-		fmt.Printf("subbbb     %+v\n", ed.Subscriber)
 		return json.Marshal(ed)
 	}
 }
 
 func (ed *EventDelivery) GetID() string {
 	return ed.Subscriber.ID
+}
+
+func (ed *EventDelivery) NumDeliveries() int {
+	return int(ed.TotalDeliveries.Load())
+}
+
+func (ed *EventDelivery) IncDeliveries() {
+	ed.TotalDeliveries.Add(1)
 }
 
 func (ed *EventDelivery) Execute() error {

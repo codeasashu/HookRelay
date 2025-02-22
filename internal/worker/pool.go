@@ -59,6 +59,8 @@ type Task interface {
 	GetID() string
 	Execute() error
 	Retries() int
+	NumDeliveries() int // Get number of deliveries till now
+	IncDeliveries()     // Increment deliveries
 }
 
 func InitPool(f *app.HookRelayApp) *WorkerPool {
@@ -81,7 +83,7 @@ func CreateQueueWorker(f *app.HookRelayApp, marshaler MarshalerMap, callback fun
 
 func (wp *WorkerPool) SetLocalClient(c Worker) error {
 	wp.localWorker = c
-	slog.Info("added local worker")
+	slog.Info("local worker: connected")
 	return nil
 }
 
@@ -91,19 +93,17 @@ func (wp *WorkerPool) SetQueueClient(c Worker) error {
 		return err
 	}
 	wp.queueWorker = c
-	slog.Info("queue worker client is connected")
+	slog.Info("queue worker: connected")
 	return nil
 }
 
+// Checks if jobs should be scheduled to remote worker
 func (wp *WorkerPool) ShouldUseRemote(job Task, isRetrying bool) bool {
-	// Checks if jobs should be scheduled to remote worker
-	// based on several criterias
 	remoteIsReady := wp.queueWorker != nil && wp.queueWorker.IsReady()
 	localIsReady := wp.localWorker != nil && wp.localWorker.IsReady()
-	if isRetrying {
-		return remoteIsReady
-	}
-	return remoteIsReady && !localIsReady
+
+	// prioritise local worker
+	return (!localIsReady && remoteIsReady) || (isRetrying && remoteIsReady)
 }
 
 func (wp *WorkerPool) Schedule(job Task, isRetrying bool) error {

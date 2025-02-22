@@ -70,8 +70,6 @@ func handleServer(cmd *cobra.Command, args []string) error {
 	mainApp.InitDeliveryDb()
 
 	// legacyMode, _ := cmd.Flags().GetBool("legacy-mode")
-	// noWalMode, _ := cmd.Flags().GetBool("skip-wal")
-	//
 	// Init worker pool
 	wp := setupWorkers(mainApp)
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/hibiken/asynq"
@@ -26,8 +27,37 @@ type QueueWorker struct {
 	ID     string
 	ctx    context.Context
 	client *asynq.Client
+	server *asynq.Server
 
-	marshalers MarshalerMap
+	marshalers   MarshalerMap
+	unmarshalers UnmarshalerMap
+}
+
+func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWorker {
+	server := asynq.NewServer(
+		asynq.RedisClientOpt{
+			Addr:     f.Cfg.QueueWorker.Addr,
+			DB:       f.Cfg.QueueWorker.Db,
+			Password: f.Cfg.QueueWorker.Password,
+			Username: f.Cfg.QueueWorker.Username,
+		},
+		asynq.Config{
+			Concurrency: f.Cfg.QueueWorker.Concurrency,
+			Queues: map[string]int{
+				QueueName: 1,
+			},
+			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
+				return 1 * time.Second
+			},
+		},
+	)
+
+	return &QueueWorker{
+		ID:           ulid.Make().String(),
+		ctx:          context.Background(),
+		server:       server,
+		unmarshalers: unmarshalers,
+	}
 }
 
 func NewQueueWorker(f *app.HookRelayApp, marshalers MarshalerMap) *QueueWorker {
@@ -47,6 +77,24 @@ func NewQueueWorker(f *app.HookRelayApp, marshalers MarshalerMap) *QueueWorker {
 	}
 }
 
+func (c *QueueWorker) StartServer(callback func([]Task) error) error {
+	if c.server != nil {
+		mux := asynq.NewServeMux()
+		mux.HandleFunc(TypeEventDelivery, func(ctx context.Context, t *asynq.Task) error {
+			if unmarshaler, ok := c.unmarshalers[t.Type()]; ok {
+				j, err := unmarshaler(t.Payload())
+				if err != nil {
+					return err
+				}
+				return c.Dequeue(j, callback)
+			}
+			return errors.ErrUnsupported
+		})
+		return c.server.Start(mux)
+	}
+	return errors.New("queue server not set")
+}
+
 func (c *QueueWorker) IsReady() bool {
 	if c.client != nil {
 		if err := c.client.Ping(); err == nil {
@@ -64,6 +112,10 @@ func (c *QueueWorker) Shutdown() {
 	if c.client != nil {
 		c.client.Close()
 	}
+
+	if c.server != nil {
+		c.server.Shutdown()
+	}
 }
 
 func (c *QueueWorker) Enqueue(job Task) error {
@@ -73,7 +125,13 @@ func (c *QueueWorker) Enqueue(job Task) error {
 		return err
 	}
 	t := asynq.NewTask(TypeEventDelivery, payload)
-	info, err := c.client.Enqueue(t, asynq.Queue(QueueName))
+
+	// Add retry
+	retiresLeft := job.Retries() - job.NumDeliveries()
+	if retiresLeft < 0 {
+		retiresLeft = 0
+	}
+	info, err := c.client.Enqueue(t, asynq.Queue(QueueName), asynq.MaxRetry(retiresLeft))
 	if err != nil {
 		slog.Error("could not enqueue task", "err", err)
 		return err
@@ -90,23 +148,15 @@ func NewQueueJob(job Task) (*asynq.Task, error) {
 	return asynq.NewTask(TypeEventDelivery, payload), nil
 }
 
-func HandleQueueJob(ctx context.Context, t *asynq.Task, unmarshalerMap UnmarshalerMap, callback func([]Task) error) error {
-	if unmarshaler, ok := unmarshalerMap[t.Type()]; ok {
-		j, err := unmarshaler(t.Payload())
-		if err != nil {
-			return err
-		}
-
-		slog.Info("Processing job", "job_id", j, "event_id", j)
-		exeErr := j.Execute() // Update job result
-
-		callback([]Task{j})
-		if exeErr != nil {
-			slog.Error("error processing job", "job_id", j, "error", err)
-			return err
-		}
-		slog.Info("job complete. sending result", "job_id", j)
-		return nil
+func (w *QueueWorker) Dequeue(j Task, callback func([]Task) error) error {
+	slog.Info("Processing job", "job_id", j, "event_id", j)
+	err := j.Execute() // Update job result
+	j.IncDeliveries()
+	callback([]Task{j})
+	if err != nil {
+		slog.Error("error processing job", "job_id", j, "error", err)
+		return err
 	}
-	return errors.ErrUnsupported
+	slog.Info("job complete. sending result", "job_id", j)
+	return nil
 }

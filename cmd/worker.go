@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/delivery"
-	wrkr "github.com/codeasashu/HookRelay/internal/worker"
-	"github.com/codeasashu/HookRelay/pkg/worker"
+	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 )
@@ -23,9 +23,9 @@ func WorkerCmd() *cobra.Command {
 	return cmd
 }
 
-func getUnmarshalerMap() wrkr.UnmarshalerMap {
-	mm := map[string]func([]byte) (wrkr.Task, error){
-		wrkr.TypeEventDelivery: delivery.EventDeliveryUnmarshaler(),
+func getUnmarshalerMap() worker.UnmarshalerMap {
+	mm := map[string]func([]byte) (worker.Task, error){
+		worker.TypeEventDelivery: delivery.EventDeliveryUnmarshaler(),
 	}
 	return mm
 }
@@ -34,6 +34,7 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, unix.SIGTERM, unix.SIGINT, unix.SIGHUP)
 	ctx := context.Background()
+	wg := sync.WaitGroup{}
 
 	cfgFile, err := cmd.Flags().GetString("config")
 	if err != nil {
@@ -46,20 +47,14 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 	}
 	mainApp.InitDeliveryDb()
 
-	slog.Info("staring queue worker")
-	wrk, err := worker.StartQueueWorker(mainApp, getUnmarshalerMap())
-	if err != nil {
-		return err
-	}
+	wrk := worker.NewQueueServer(mainApp, getUnmarshalerMap())
 
-	// Wait for termination signal.
-	// <-sigs
-	//
-	// slog.Info("shutting down worker...")
-	// wrk.Shutdown()
-	//
-	// return nil
-	//
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slog.Info("staring queue worker")
+		go wrk.StartServer(delivery.SaveDeliveries(mainApp))
+	}()
 
 	select {
 	case <-ctx.Done():
@@ -68,12 +63,13 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 		break
 
 	case <-sigs:
-		slog.Info("shutting down server...")
+		slog.Info("shutting down worker...")
 		mainApp.Shutdown(ctx)
 		wrk.Shutdown()
 		break
 	}
 
 	close(sigs)
+	wg.Wait()
 	return nil
 }

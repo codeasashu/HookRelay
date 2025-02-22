@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,19 +63,9 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) e
 	return localClient
 }
 
-func (c *LocalWorker) CurrentCapacity() int {
-	return len(c.JobQueue)
-}
-
-func (c *LocalWorker) IsNearlyFull() bool {
-	// Returns true if the queue is more than 40% full (coz only half the queue is alloted to JobQueue)
-	slog.Info("queue_size", "job_queue", len(c.JobQueue), "config", c.queueuSize)
-	return len(c.JobQueue) > (c.queueuSize/10)*4
-}
-
 func (c *LocalWorker) IsReady() bool {
 	// Returns true if the queue is less than 40% full (coz only half the queue is alloted to JobQueue)
-	return len(c.JobQueue) > (c.queueuSize/10)*4
+	return len(c.JobQueue) < int(math.Ceil((float64(c.queueuSize)/10)*4))
 }
 
 func (c *LocalWorker) Ping() error {
@@ -143,6 +134,7 @@ func (w *LocalWorker) launchThread() {
 				slog.Info("got job item", "job_id", job.GetID())
 				// w.metrics.RecordDispatchLatency(job., "local") // @TODO: Fix me
 				err := job.Execute()
+				job.IncDeliveries()
 				retryErr := w.handleRetry(job, err)
 				if retryErr != nil {
 					slog.Error("retry error", "err", retryErr)
