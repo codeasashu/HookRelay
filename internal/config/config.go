@@ -182,8 +182,8 @@ func LoadConfig(customConfigPath string) (*Config, error) {
 
 	// Unmarshal the configuration into the Config struct
 	if err := v.Unmarshal(&HRConfig); err != nil {
-		log.Printf("error unmarshaling configuration: %s", err)
-		return nil, errors.New("error unmarshaling configuration")
+		log.Printf("error unmarshalling configuration: %s", err)
+		return nil, errors.New("error unmarshalling configuration")
 	}
 
 	return &HRConfig, nil

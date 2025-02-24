@@ -13,7 +13,7 @@ import (
 type key string
 
 const (
-	WorkerContextKey key = "_wal_instance" // To get isntance by context key, in workers
+	WorkerContextKey key = "_wal_instance" // To get instance by context key, in workers
 )
 
 type AbstractWAL interface {
