@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/codeasashu/HookRelay/internal/api"
@@ -19,6 +20,8 @@ func AddRoutes(server *api.ApiServer) {
 
 func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		slog.InfoContext(c, "Processing subscription request")
+
 		var cs *subscription.ReadSubscription
 		if err := c.ShouldBindJSON(&cs); err != nil {
 			c.JSON(400, gin.H{"status": "error", "error": err.Error()})

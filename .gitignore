@@ -23,9 +23,15 @@ go.work.sum
 
 # env file
 .env
+hookrelay.toml
 
 chatgpt/
 
 config.toml
 *.config.toml
 *.sqlite*
+
+# IDE
+.lh/
+.idea/
+

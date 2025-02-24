@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/codeasashu/HookRelay/internal/config"
+	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
 
@@ -23,12 +25,22 @@ func newZerologHandler(logger *zerolog.Logger) *ZerologHandler {
 // Handle implements the slog.Handler interface
 //
 //nolint:gocritic // The slog.Record struct triggers hugeParam, but we don't control the interface (it's a standard library one)
-func (h *ZerologHandler) Handle(_ context.Context, record slog.Record) error {
+func (h *ZerologHandler) Handle(ctx context.Context, record slog.Record) error {
+
+	// If the context is a gin.Context, we need to extract the context from it's request
+	if ginCtx, ok := ctx.(*gin.Context); ok {
+		ctx = ginCtx.Request.Context()
+	}
+
 	event := h.logger.WithLevel(toZerologLevel(record.Level))
 	record.Attrs(func(attr slog.Attr) bool {
 		addAttrToZerolog(attr, event)
 		return true
 	})
+
+	if traceId, ok := ctx.Value(config.TraceIDKey).(string); ok {
+		event.Str(string(config.TraceIDKey), traceId)
+	}
 	event.Msg(record.Message)
 	return nil
 }
