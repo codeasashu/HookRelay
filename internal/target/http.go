@@ -2,7 +2,6 @@ package target
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -67,7 +66,7 @@ func (t *Target) SetHeaders(req *http.Request) *http.Request {
 	return req
 }
 
-func (target *Target) ProcessTarget(payload interface{}) (int, error) {
+func (target *Target) ProcessTarget(payload []byte) (int, error) {
 	if target.Type != TargetHTTP {
 		slog.Error("unsupported target type", "type", target.Type)
 		return 0, errors.New("unsupported target type")
@@ -98,35 +97,21 @@ func (target *Target) ProcessTarget(payload interface{}) (int, error) {
 		}
 
 		// Handle different Content-Types
-		if contentType == "application/json" {
-			payloadBytes, err := json.Marshal(payload)
-			if err != nil {
-				slog.Error("failed to marshal JSON payload", "err", err)
-				return 0, err
-			}
-			bodyReader = bytes.NewBuffer(payloadBytes)
-		} else if contentType == "application/x-www-form-urlencoded" {
+		switch contentType {
+		case "application/json":
+			bodyReader = bytes.NewBuffer(payload)
+		case "application/x-www-form-urlencoded":
 			data := url.Values{}
-			if formData, ok := payload.(map[string]string); ok {
-				for key, value := range formData {
-					data.Set(key, value)
-				}
-			}
+			data.Set("payload", string(payload))
 			bodyReader = strings.NewReader(data.Encode())
-		} else if contentType == "multipart/form-data" {
+		case "multipart/form-data":
 			var buffer bytes.Buffer
 			writer := multipart.NewWriter(&buffer)
-
-			if formData, ok := payload.(map[string]string); ok {
-				for key, value := range formData {
-					_ = writer.WriteField(key, value)
-				}
-			}
-
+			writer.WriteField("payload", string(payload))
 			writer.Close()
 			bodyReader = &buffer
 			target.HTTPDetails.Headers["Content-Type"] = writer.FormDataContentType()
-		} else {
+		default:
 			slog.Error("unsupported Content-Type found in headers", "content-type", contentType)
 			return 0, errors.New("unsupported Content-Type: " + contentType)
 		}
