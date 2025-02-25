@@ -14,7 +14,7 @@ LOG_FILE="/var/log/$APP_NAME.log"
 mkdir -p $APP_DIR
 
 # Compile app
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o $APP_NAME cmd/cmd.go
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o $APP_NAME main.go
 mv ./$APP_NAME $BINARY_PATH
 chmod +x $BINARY_PATH
 
