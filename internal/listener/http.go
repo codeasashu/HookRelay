@@ -79,7 +79,7 @@ func (l *HTTPListener) setupWorker() {
 				l.wal.Log(event.LogEvent)
 			}
 			startTime := time.Now()
-			subscriptions, err := l.subscription.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId, true)
+			subscriptions, err := l.subscription.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
 			l.metrics.RecordSubscriberDbLatency(event.OwnerId, event.EventType, &startTime)
 			if err != nil {
 				slog.Error("error fetching subscriptions", "err", err)

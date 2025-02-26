@@ -6,11 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCLI(appVersion string) *cobra.Command {
-	if appVersion == "" {
-		appVersion = "(unknown)"
-	}
-
+func NewCLI(buildVersion string) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "hookrelay",
 		Short:         "Webhook Relay",
@@ -21,7 +17,7 @@ func NewCLI(appVersion string) *cobra.Command {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if version, _ := cmd.Flags().GetBool("version"); version {
-				fmt.Println(appVersion)
+				fmt.Println(buildVersion)
 				return
 			}
 

@@ -21,6 +21,7 @@ var (
 	ErrSubscriptionNotCreated = errors.New("subscription could not be created")
 	ErrSubscriptionNotFound   = errors.New("subscription could not be found")
 	ErrSubscriptionExists     = errors.New("subscription already exists")
+	ErrLegacySubscription     = errors.New("creating subscription in legacy mode is not allowed")
 )
 
 func (r *Subscription) Validate(s *Subscriber) error {
@@ -68,7 +69,7 @@ func (r *Subscription) HasSubscriptions(subscriptionId string) (bool, error) {
 	return false, nil // No subscriptions found
 }
 
-func (r *Subscription) CreateSubscription(s *Subscriber) error {
+func (r *Subscription) CreateSubscriber(s *Subscriber) error {
 	if err := r.Validate(s); err != nil {
 		slog.Error("error validating subscription", "err", err)
 		return err
@@ -188,8 +189,8 @@ func (r *Subscription) FindLegacySubscriptionsByEventTypeAndOwner(eventType, own
 	return subscriptions, nil
 }
 
-func (r *Subscription) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string, isLegacy bool) ([]Subscriber, error) {
-	if isLegacy {
+func (r *Subscription) FindSubscriptionsByEventTypeAndOwner(eventType, ownerID string) ([]Subscriber, error) {
+	if r.legacyMode {
 		return r.FindLegacySubscriptionsByEventTypeAndOwner(eventType, ownerID)
 	}
 	query := `

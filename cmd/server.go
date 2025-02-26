@@ -69,7 +69,6 @@ func handleServer(cmd *cobra.Command, args []string) error {
 	mainApp.InitSubscriptionDb()
 	mainApp.InitDeliveryDb()
 
-	// legacyMode, _ := cmd.Flags().GetBool("legacy-mode")
 	// Init worker pool
 	wp := setupWorkers(mainApp)
 
@@ -81,7 +80,8 @@ func handleServer(cmd *cobra.Command, args []string) error {
 	deliveryApp.InitApiRoutes()
 
 	// Init subscription
-	subscriptionApp, err := subscription.NewSubscription(mainApp)
+	legacyMode, _ := cmd.Flags().GetBool("legacy-mode")
+	subscriptionApp, err := subscription.NewSubscription(mainApp, legacyMode)
 	if err != nil {
 		return fmt.Errorf("failed to initialize delivery: %v", err)
 	}

@@ -18,13 +18,22 @@ import (
 var m *metrics.Metrics
 
 type Subscription struct {
-	router  *gin.Engine
-	metrics *metrics.Metrics
-	db      database.Database
+	router     *gin.Engine
+	metrics    *metrics.Metrics
+	db         database.Database
+	legacyMode bool
 }
 
-func NewSubscription(f *app.HookRelayApp) (*Subscription, error) {
-	return &Subscription{db: f.SubscriptionDb, router: f.Router, metrics: f.Metrics}, nil
+func NewSubscription(f *app.HookRelayApp, legacyMode bool) (*Subscription, error) {
+	if legacyMode {
+		slog.Warn("Running subscription module in legacy mode. This is not recommended.")
+	}
+	return &Subscription{
+		db:         f.SubscriptionDb,
+		router:     f.Router,
+		metrics:    f.Metrics,
+		legacyMode: legacyMode,
+	}, nil
 }
 
 type Subscriber struct {
