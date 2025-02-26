@@ -1,23 +1,23 @@
 package delivery
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/subscription"
 	"github.com/codeasashu/HookRelay/internal/worker"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Delivery interface {
 	Schedule(job *EventDelivery) error
-	// GetDB() database.Database
-	// GetWAL() wal.AbstractWAL
 }
 
 type EventDelivery struct {
@@ -61,6 +61,10 @@ func (ed *EventDelivery) GetID() string {
 	return ed.Subscriber.ID
 }
 
+func (ed *EventDelivery) GetType() string {
+	return ed.EventType
+}
+
 func (ed *EventDelivery) NumDeliveries() int {
 	return int(ed.TotalDeliveries.Load())
 }
@@ -69,8 +73,13 @@ func (ed *EventDelivery) IncDeliveries() {
 	ed.TotalDeliveries.Add(1)
 }
 
-func (ed *EventDelivery) Execute() error {
-	ed.StartAt = time.Now()
+func (ed *EventDelivery) Execute(wrkr worker.Worker) error {
+	targetStartTime := time.Now()
+	m := wrkr.GetMetricsHandler()
+	wrkrType := wrkr.GetType()
+	if m != nil && m.IsEnabled {
+		m.RecordPreFlightLatency("http", &ed.StartAt)
+	}
 	if ed.Subscriber == nil || ed.Subscriber.Target == nil {
 		return fmt.Errorf("invalid event subscription")
 	}
@@ -83,6 +92,28 @@ func (ed *EventDelivery) Execute() error {
 	}
 	ed.StatusCode = statusCode
 	ed.CompleteAt = time.Now()
+	if m != nil && m.IsEnabled {
+		m.IncTotalDeliveries(ed.EventType, string(wrkrType), strconv.Itoa(statusCode))
+
+		d := time.Since(targetStartTime)
+		t := float64(d) / float64(time.Millisecond)
+		method := string(ed.Subscriber.Target.HTTPDetails.Method)
+		m.TargetLatency.With(prometheus.Labels{
+			metrics.OwnerLabel:        ed.OwnerId,
+			metrics.TargetUrlLabel:    ed.Subscriber.Target.HTTPDetails.URL,
+			metrics.TargetMethodLabel: method,
+		}).Observe(t)
+
+		d = time.Since(ed.StartAt)
+		t = float64(d) / float64(time.Millisecond)
+		m.DeliveryLatency.With(prometheus.Labels{
+			metrics.OwnerLabel:          ed.OwnerId,
+			metrics.EventTypeLabel:      ed.EventType,
+			metrics.WorkerLabel:         string(wrkrType),
+			metrics.DeliveryStatusLabel: strconv.Itoa(statusCode),
+		}).Observe(t)
+	}
+
 	return err
 }
 
@@ -97,14 +128,13 @@ func SaveDeliveries(f *app.HookRelayApp) func(deliveries []worker.Task) error {
 		}
 	} else if f.DeliveryDb != nil {
 		return func(deliveries []worker.Task) error {
-			return SaveBatchEventDelivery(f.DeliveryDb, deliveries)
+			startTime := time.Now()
+			err := SaveBatchEventDelivery(f.DeliveryDb, deliveries)
+			f.Metrics.RecordDeliveryDbLatency("direct", &startTime)
+			return err
 		}
 	}
 	return nil
-}
-
-func HandleWALRotation(f *app.HookRelayApp) func(db *sql.DB) error {
-	return ProcessRotatedWAL(f.DeliveryDb)
 }
 
 func NewEventDelivery(e *event.Event, subscriber *subscription.Subscriber) *EventDelivery {
@@ -116,7 +146,7 @@ func NewEventDelivery(e *event.Event, subscriber *subscription.Subscriber) *Even
 	delivery := &EventDelivery{
 		EventType:      e.EventType,
 		Payload:        payloadBytes,
-		StartAt:        e.AcknowledgedAt,
+		StartAt:        e.CreatedAt,
 		OwnerId:        e.OwnerId,
 		SubscriptionId: subscriber.ID,
 		CompleteAt:     time.Now(),

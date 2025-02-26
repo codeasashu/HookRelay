@@ -14,30 +14,12 @@ var (
 	ErrRemoteJob    = errors.New("job: remote job error")
 )
 
-//	type Job struct {
-//		ID            string
-//		Event         *event.Event
-//		Subscription  *subscription.Subscription
-//		Result        *event.EventDelivery
-//		numDeliveries uint16
-//		wp            *WorkerPool
-//		isRetrying    bool
-//	}
-//
-//	type WorkerClient interface {
-//		SendJob(job *delivery.EventDelivery) error
-//	}
-//
-//	type Worker struct {
-//		ID     string
-//		client WorkerClient
-//	}
-//
-//	func NewWorker() *Worker {
-//		return &Worker{
-//			ID: ulid.Make().String(),
-//		}
-//	}
+type WorkerType string
+
+const (
+	LocalWorkerType WorkerType = "local"
+	QueueWorkerType WorkerType = "queue"
+)
 
 // @TODO: Make this a linked list to support multiple workers
 type WorkerPool struct {
@@ -53,11 +35,15 @@ type Worker interface {
 	// IsNearlyFull() bool
 	Shutdown()
 	IsReady() bool
+	GetID() string
+	GetType() WorkerType
+	GetMetricsHandler() *metrics.Metrics
 }
 
 type Task interface {
 	GetID() string
-	Execute() error
+	GetType() string
+	Execute(worker Worker) error
 	Retries() int
 	NumDeliveries() int // Get number of deliveries till now
 	IncDeliveries()     // Increment deliveries

@@ -101,7 +101,7 @@ func handleServer(cmd *cobra.Command, args []string) error {
 		cb := []func(db *sql.DB) error{}
 
 		if mainApp.DeliveryDb != nil {
-			cb = append(cb, delivery.HandleWALRotation(mainApp))
+			cb = append(cb, delivery.ProcessRotatedWAL(mainApp.Metrics, mainApp.DeliveryDb))
 		}
 
 		wal.InitBG(mainApp.WAL, cb)

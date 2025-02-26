@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/delivery"
@@ -54,7 +55,7 @@ func (l *HTTPListener) InitApiRoutes() {
 			slog.Info("Received HTTP Event")
 			// i := r.URL.Query().Get("id")
 			e, err := l.transformEvent(c.Request)
-			l.metrics.RecordIngestLatency(e.CreatedAt)
+			l.metrics.RecordIngestLatency("http", e.CreatedAt)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": err.Error()})
 				return
@@ -74,15 +75,18 @@ func (l *HTTPListener) setupWorker() {
 				return
 			}
 			slog.Info("Received event from listener channel", "event", event)
-			l.wal.Log(event.LogEvent)
+			if l.wal != nil {
+				l.wal.Log(event.LogEvent)
+			}
+			startTime := time.Now()
 			subscriptions, err := l.subscription.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId, true)
+			l.metrics.RecordSubscriberDbLatency(event.OwnerId, event.EventType, &startTime)
 			if err != nil {
 				slog.Error("error fetching subscriptions", "err", err)
 				continue
 			}
-
+			l.metrics.UpdateTotalDeliverables(event.EventType, len(subscriptions))
 			slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType, "owner_id", event.OwnerId)
-			l.metrics.RecordPreFlightLatency(event)
 			if len(subscriptions) == 0 {
 				continue
 			}
@@ -110,7 +114,7 @@ func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
 	if err != nil {
 		return nil, errors.New("failed to decode event payload. invalid json")
 	}
-	l.metrics.IncrementIngestTotal()
+	l.metrics.IncrementIngestTotal("http")
 	event.Ack()
 	slog.Info("Acknowledge evnet", "id", event.UID, "type", event.EventType)
 	return event, nil

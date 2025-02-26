@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/codeasashu/HookRelay/internal/database"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/codeasashu/HookRelay/internal/worker"
 )
@@ -47,6 +49,10 @@ func LogEventDelivery(w wal.AbstractWAL, t worker.Task) error {
 
 func LogBatchEventDelivery(w wal.AbstractWAL, events []worker.Task) error {
 	if len(events) == 0 {
+		return nil
+	}
+
+	if w == nil {
 		return nil
 	}
 
@@ -94,7 +100,7 @@ func LogBatchEventDelivery(w wal.AbstractWAL, events []worker.Task) error {
 	return nil
 }
 
-func ProcessRotatedWAL(deliveryDb database.Database) func(db *sql.DB) error {
+func ProcessRotatedWAL(m *metrics.Metrics, deliveryDb database.Database) func(db *sql.DB) error {
 	batchSize := 100
 	return func(db *sql.DB) error {
 		rows, err := db.Query(`
@@ -124,10 +130,13 @@ func ProcessRotatedWAL(deliveryDb database.Database) func(db *sql.DB) error {
 			// Process batch if it reaches the batch size
 			if len(batch) >= batchSize {
 				slog.Debug("processing batch", slog.Int("batch_size", len(batch)), slog.Int("processed", processedDeliveries))
+				startTime := time.Now()
 				if err := SaveBatchEventDelivery(deliveryDb, batch); err != nil {
+					m.RecordDeliveryDbLatency("wal", &startTime)
 					rows.Close()
 					return err
 				}
+				m.RecordDeliveryDbLatency("wal", &startTime)
 				batch = batch[:0] // Reset batch
 			}
 		}
@@ -135,10 +144,13 @@ func ProcessRotatedWAL(deliveryDb database.Database) func(db *sql.DB) error {
 		// Process any remaining events in the batch
 		if len(batch) > 0 {
 			slog.Debug("processing final batch", slog.Int("batch_size", len(batch)), slog.Int("processed", processedDeliveries))
+			startTime := time.Now()
 			if err := SaveBatchEventDelivery(deliveryDb, batch); err != nil {
+				m.RecordDeliveryDbLatency("wal", &startTime)
 				rows.Close()
 				return err
 			}
+			m.RecordDeliveryDbLatency("wal", &startTime)
 		}
 
 		if err := rows.Err(); err != nil {

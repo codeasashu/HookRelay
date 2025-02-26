@@ -18,16 +18,13 @@ import (
 var m *metrics.Metrics
 
 type Subscription struct {
-	router *gin.Engine
-	db     database.Database
-}
-
-type SubscriptionHandler interface {
-	FindSubscribers(eventType, ownerID string, isLegacy bool) ([]Subscriber, error)
+	router  *gin.Engine
+	metrics *metrics.Metrics
+	db      database.Database
 }
 
 func NewSubscription(f *app.HookRelayApp) (*Subscription, error) {
-	return &Subscription{db: f.SubscriptionDb, router: f.Router}, nil
+	return &Subscription{db: f.SubscriptionDb, router: f.Router, metrics: f.Metrics}, nil
 }
 
 type Subscriber struct {

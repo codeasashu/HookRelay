@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/hibiken/asynq"
 
 	"github.com/oklog/ulid/v2"
@@ -24,8 +25,10 @@ type (
 )
 
 type QueueWorker struct {
-	ID     string
-	ctx    context.Context
+	ID      string
+	ctx     context.Context
+	metrics *metrics.Metrics
+
 	client *asynq.Client
 	server *asynq.Server
 
@@ -53,10 +56,11 @@ func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWork
 	)
 
 	return &QueueWorker{
-		ID:           ulid.Make().String(),
+		ID:           "asynq-" + ulid.Make().String(),
 		ctx:          context.Background(),
 		server:       server,
 		unmarshalers: unmarshalers,
+		metrics:      f.Metrics,
 	}
 }
 
@@ -70,10 +74,11 @@ func NewQueueWorker(f *app.HookRelayApp, marshalers MarshalerMap) *QueueWorker {
 
 	slog.Info("readying remote queue")
 	return &QueueWorker{
-		ID:         ulid.Make().String(),
+		ID:         "asynq-" + ulid.Make().String(),
 		ctx:        context.Background(),
 		client:     client,
 		marshalers: marshalers,
+		metrics:    f.Metrics,
 	}
 }
 
@@ -148,9 +153,22 @@ func NewQueueJob(job Task) (*asynq.Task, error) {
 	return asynq.NewTask(TypeEventDelivery, payload), nil
 }
 
+func (w *QueueWorker) GetMetricsHandler() *metrics.Metrics {
+	return w.metrics
+}
+
+func (w *QueueWorker) GetID() string {
+	return w.ID
+}
+
+func (w *QueueWorker) GetType() WorkerType {
+	return WorkerType("queue")
+}
+
 func (w *QueueWorker) Dequeue(j Task, callback func([]Task) error) error {
 	slog.Info("Processing job", "job_id", j, "event_id", j)
-	err := j.Execute() // Update job result
+	err := j.Execute(w) // Update job result
+	// Update total deliveries
 	j.IncDeliveries()
 	callback([]Task{j})
 	if err != nil {

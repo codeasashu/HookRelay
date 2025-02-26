@@ -92,9 +92,8 @@ func (a *HookRelayApp) InitDeliveryDb() error {
 }
 
 func initMetrics(f *HookRelayApp) *metrics.Metrics {
-	mt := metrics.InitMetrics(&f.Cfg.Metrics)
-	mt.RegisterWorkerMetrics(&f.Cfg.QueueWorker)
-	// mt.InitApiRoutes()
+	mt := metrics.NewMetrics(f.Cfg)
+	mt.MetricsMiddleware(f.Router)
 	return mt
 }
 

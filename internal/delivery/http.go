@@ -42,13 +42,6 @@ func NewHTTPDelivery(a *app.HookRelayApp, wp *worker.WorkerPool) (*HTTPDelivery,
 	return &HTTPDelivery{db: a.DeliveryDb, router: a.Router, metrics: a.Metrics, wp: wp, wl: a.WAL}, nil
 }
 
-//	func (d *HTTPDelivery) GetDB() database.Database {
-//		return d.db
-//	}
-//
-//	func (d *HTTPDelivery) GetWAL() wal.AbstractWAL {
-//		return d.wl
-//	}
 func (d *HTTPDelivery) Schedule(job *EventDelivery) error {
 	slog.Info("scheduling job", "dd", job.EventType)
 	return d.wp.Schedule(job, false)

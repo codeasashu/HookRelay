@@ -41,7 +41,7 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) e
 	}
 
 	localClient := &LocalWorker{
-		ID:          ulid.Make().String(),
+		ID:          "local-" + ulid.Make().String(),
 		metrics:     f.Metrics,
 		ctx:         f.Ctx,
 		queueuSize:  f.Cfg.LocalWorker.QueueSize,
@@ -94,9 +94,7 @@ func (c *LocalWorker) scaleThreads(interval time.Duration) {
 		case <-ticker.C: // Periodic check
 			queueLen := len(c.JobQueue)
 			active := atomic.LoadInt32(&c.activeThreads)
-			c.metrics.UpdateWorkerQueueSize("local", queueLen)
-			c.metrics.UpdateWorkerThreadCount("local", int(active))
-
+			c.metrics.UpdateWorkerQueueSize(queueLen)
 			if queueLen > 0 && (c.MaxThreads == -1 || active < int32(c.MaxThreads)) {
 				// Increase threads if the queue is filling up.
 				slog.Debug("increasing worker threas", "worker_id", c.ID)
@@ -112,19 +110,29 @@ func (c *LocalWorker) scaleThreads(interval time.Duration) {
 	}
 }
 
+func (w *LocalWorker) GetMetricsHandler() *metrics.Metrics {
+	return w.metrics
+}
+
+func (w *LocalWorker) GetID() string {
+	return w.ID
+}
+
+func (w *LocalWorker) GetType() WorkerType {
+	return WorkerType("local")
+}
+
 // launchThread starts a new thread to process jobs.
 func (w *LocalWorker) launchThread() {
 	// app := cli.GetAppInstance()
 	w.wg.Add(1)
 	atomic.AddInt32(&w.activeThreads, 1)
-	w.metrics.UpdateWorkerThreadCount("local", int(w.activeThreads))
 
 	slog.Debug("Increased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 	go func() {
 		defer func() {
 			w.wg.Done()
 			atomic.AddInt32(&w.activeThreads, -1)
-			w.metrics.UpdateWorkerThreadCount("local", int(w.activeThreads))
 			slog.Debug("Decreased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 		}()
 
@@ -132,8 +140,7 @@ func (w *LocalWorker) launchThread() {
 			select {
 			case job := <-w.JobQueue:
 				slog.Info("got job item", "job_id", job.GetID())
-				// w.metrics.RecordDispatchLatency(job., "local") // @TODO: Fix me
-				err := job.Execute()
+				err := job.Execute(w)
 				job.IncDeliveries()
 				retryErr := w.handleRetry(job, err)
 				if retryErr != nil {

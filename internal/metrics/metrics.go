@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/config"
-	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -32,79 +31,66 @@ type Metrics struct {
 	router    *gin.Engine
 
 	// Event Metrics
-	IngestTotal          *prometheus.CounterVec
-	IngestConsumedTotal  *prometheus.CounterVec
-	IngestErrorsTotal    *prometheus.CounterVec
-	IngestSuccessTotal   *prometheus.CounterVec
-	IngestLatency        *prometheus.HistogramVec
-	EventDeliveryLatency *prometheus.HistogramVec
-	EventDispatchLatency *prometheus.HistogramVec
-	PreFlightLatency     *prometheus.HistogramVec
+	IngestTotal         *prometheus.CounterVec
+	IngestLatency       *prometheus.HistogramVec
+	TargetLatency       *prometheus.HistogramVec
+	DeliveryLatency     *prometheus.HistogramVec
+	PreFlightLatency    *prometheus.HistogramVec
+	SubscriberDbLatency *prometheus.HistogramVec
+	DeliveryDbLatency   *prometheus.HistogramVec
 
 	// Subscriptions metrics
-	TotalSubscriptions *prometheus.GaugeVec
-	FanoutSize         *prometheus.HistogramVec
+	TotalDeliverables *prometheus.GaugeVec
+
+	// Dispatcher metrics
+	TotalDeliveries *prometheus.CounterVec
 
 	// Worker Metrics
-	WorkerQueueSize    *prometheus.GaugeVec
-	WorkerThreadsTotal *prometheus.GaugeVec
+	LocalWorkerQueueSize *prometheus.GaugeVec
 }
 
-func NewMetrics(cfg *config.MetricsConfig) *Metrics {
-	m := InitMetrics(cfg)
+func NewMetrics(cfg *config.Config) *Metrics {
+	m := InitMetrics(&cfg.Metrics)
 
 	if m.IsEnabled {
+		inspector := asynq.NewInspector(asynq.RedisClientOpt{
+			Addr:     cfg.QueueWorker.Addr,
+			DB:       cfg.QueueWorker.Db,
+			Password: cfg.QueueWorker.Password,
+			Username: cfg.QueueWorker.Username,
+		})
+		qw := qmetrics.NewQueueMetricsCollector(inspector)
 		m.Registery.MustRegister(
 			// Add the standard process and go metrics to the registry
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 			collectors.NewGoCollector(),
 			m.IngestTotal,
 			m.IngestLatency,
-			m.TotalSubscriptions,
-			m.FanoutSize,
+			m.TotalDeliverables,
+			m.TotalDeliveries,
 			m.PreFlightLatency,
-
-			// Local worker metrics
-			m.IngestConsumedTotal,
-			m.IngestErrorsTotal,
-			m.IngestSuccessTotal,
-			m.EventDispatchLatency,
-			m.EventDeliveryLatency,
-			m.WorkerQueueSize,
-			m.WorkerThreadsTotal,
+			m.TargetLatency,
+			m.DeliveryLatency,
+			m.LocalWorkerQueueSize,
+			m.SubscriberDbLatency,
+			m.DeliveryDbLatency,
+			qw,
 		)
+
 	}
 	return m
 }
 
-func (m *Metrics) RegisterWorkerMetrics(cfg *config.QueueWorkerConfig) {
-	inspector := asynq.NewInspector(asynq.RedisClientOpt{
-		Addr:     cfg.Addr,
-		DB:       cfg.Db,
-		Password: cfg.Password,
-		Username: cfg.Username,
-	})
-	qw := qmetrics.NewQueueMetricsCollector(inspector)
-	m.Registery.MustRegister(
-		m.IngestConsumedTotal,
-		m.IngestErrorsTotal,
-		m.IngestSuccessTotal,
-		m.EventDispatchLatency,
-		m.EventDeliveryLatency,
-		qw,
-	)
-}
-
 const (
-	eventLabel            = "event"
-	eventTypeLabel        = "event_type"
-	targetLabel           = "target"
-	listenerLabel         = "listener"
-	deliveryLabel         = "deliver"
-	ownerLabel            = "owner_id"
-	subscriptionTypeLabel = "subscription_type"
-	pidLabel              = "pid"
-	workerLabel           = "worker"
+	EventTypeLabel        = "event_type"
+	DeliveryStatusLabel   = "status_code"
+	ListenerLabel         = "listener"
+	DeliveryLabel         = "deliver"
+	OwnerLabel            = "owner_id"
+	TargetUrlLabel        = "url"
+	TargetMethodLabel     = "method"
+	WorkerLabel           = "worker"
+	DeliveryDbSourceLabel = "db_source"
 )
 
 func InitMetrics(cfg *config.MetricsConfig) *Metrics {
@@ -120,200 +106,150 @@ func InitMetrics(cfg *config.MetricsConfig) *Metrics {
 
 		IngestTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "hookrelay_ingest_total",
+				Name: "hookrelay_total_ingested",
 				Help: "Total number of events ingested",
 			},
-			[]string{listenerLabel},
-		),
-		IngestConsumedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hookrelay_ingest_consumed_total",
-				Help: "Total number of events successfully ingested and consumed",
-			},
-			[]string{eventTypeLabel, listenerLabel, workerLabel},
-		),
-		IngestErrorsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hookrelay_ingest_errors_total",
-				Help: "Total number of errors during event ingestion",
-			},
-			[]string{eventTypeLabel, listenerLabel, workerLabel},
-		),
-		IngestSuccessTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hookrelay_ingest_success_total",
-				Help: "Total number of successful event ingestion",
-			},
-			// []string{eventLabel, eventTypeLabel, listenerLabel},
-			[]string{eventTypeLabel, listenerLabel, workerLabel},
+			[]string{ListenerLabel},
 		),
 		IngestLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name: "hookrelay_ingest_latency",
-				Help: "Total time (in microsecond) an event spends in HookRelay.",
+				Help: "Total time (in milliseconds) an event spends in HookRelay.",
 				// Buckets: prometheus.ExponentialBuckets(100, 2, 10),
 				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
 			},
-			// []string{eventLabel, eventTypeLabel, listenerLabel},
-			[]string{listenerLabel},
+			[]string{ListenerLabel},
 		),
-		EventDeliveryLatency: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "hookrelay_end_to_end_latency",
-				Help:    "Total time (in milliseconds) an event spends in HookRelay.",
-				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
-				// Buckets: prometheus.ExponentialBuckets(100, 2, 10),
-			},
-			// []string{eventLabel, eventTypeLabel, listenerLabel, deliveryLabel},
-			[]string{listenerLabel, workerLabel},
-		),
-		EventDispatchLatency: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name: "hookrelay_event_dispatch_latency",
-				Help: "Total time (in microsecond) an event spends after subscription has been found, in HookRelay.",
-				// Buckets: prometheus.ExponentialBuckets(100, 2, 10),
-				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
-			},
-			// []string{eventLabel, eventTypeLabel, listenerLabel},
-			[]string{listenerLabel, workerLabel},
-		),
-		PreFlightLatency: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name: "hookrelay_event_preflight_latency",
-				Help: "Total time (in microsecond) an event spends before being dispatched in HookRelay.",
-				// Buckets: prometheus.ExponentialBuckets(100, 2, 10),
-				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
-			},
-			// []string{eventLabel, eventTypeLabel, listenerLabel},
-			[]string{listenerLabel},
-		),
-		TotalSubscriptions: prometheus.NewGaugeVec(
+		TotalDeliverables: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hookrelay_total_subscriptions",
 				Help: "Total number of active subscriptions in hookrelay",
 			},
-			[]string{subscriptionTypeLabel},
+			[]string{EventTypeLabel},
 		),
-		FanoutSize: prometheus.NewHistogramVec(
+		PreFlightLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "hookrelay_fanout_size",
-				Help:    "Number of endpoints events are fanned out to",
-				Buckets: prometheus.ExponentialBuckets(1, 2, 10),
+				Name: "hookrelay_event_preflight_latency",
+				Help: "Total time (in milliseconds) an event spends before being dispatched in HookRelay.",
+				// Buckets: prometheus.ExponentialBuckets(100, 2, 10),
+				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
 			},
-			// []string{eventLabel, eventTypeLabel},
-			[]string{eventTypeLabel},
+			[]string{ListenerLabel},
 		),
-		WorkerQueueSize: prometheus.NewGaugeVec(
+		TotalDeliveries: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hookrelay_total_deliveries",
+				Help: "Total number of events delivered",
+			},
+			[]string{EventTypeLabel, WorkerLabel, DeliveryStatusLabel},
+		),
+		TargetLatency: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "hookrelay_target_latency",
+				Help:    "Total time (in milliseconds) an event delivery spends in target network.",
+				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
+			},
+			[]string{OwnerLabel, TargetMethodLabel, TargetUrlLabel},
+		),
+		DeliveryLatency: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "hookrelay_e2e_latency",
+				Help:    "Total time (in milliseconds) an event spends in HookRelay.",
+				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
+			},
+			[]string{OwnerLabel, EventTypeLabel, WorkerLabel, DeliveryStatusLabel},
+		),
+		LocalWorkerQueueSize: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hookrelay_worker_queue_size",
-				Help: "Total number of items in the worker queue",
+				Help: "Total number of items in the local worker queue",
 			},
-			[]string{workerLabel},
+			[]string{WorkerLabel},
 		),
-		WorkerThreadsTotal: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "hookrelay_worker_threads_count",
-				Help: "Total number of active workers threads in hookrelay",
+		SubscriberDbLatency: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "hookrelay_subscriberdb_latency",
+				Help:    "Total time (in milliseconds) to fetch subscribers from db",
+				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
 			},
-			[]string{workerLabel},
+			[]string{OwnerLabel, EventTypeLabel},
+		),
+		DeliveryDbLatency: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "hookrelay_deliverydb_latency",
+				Help:    "Total time (in milliseconds) to fetch subscribers from db",
+				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
+			},
+			[]string{DeliveryDbSourceLabel},
 		),
 	}
 
 	return m
 }
 
-func (m *Metrics) RecordEndToEndLatency(ev *event.Event, wrkr string) {
+func (m *Metrics) IncrementIngestTotal(listener string) {
 	if !m.IsEnabled {
 		return
 	}
-
-	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Millisecond)
-	m.EventDeliveryLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(t)
+	m.IngestTotal.With(prometheus.Labels{ListenerLabel: listener}).Inc()
 }
 
-func (m *Metrics) RecordPreFlightLatency(ev *event.Event) {
-	if !m.IsEnabled {
-		return
-	}
-	d := time.Since(ev.CreatedAt)
-	t := float64(d) / float64(time.Millisecond)
-	m.PreFlightLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
-}
-
-func (m *Metrics) RecordDispatchLatency(createdAt *time.Time, wrkr string) {
-	if !m.IsEnabled {
-		return
-	}
-	d := time.Since(*createdAt)
-	t := float64(d) / float64(time.Millisecond)
-	m.EventDispatchLatency.With(prometheus.Labels{listenerLabel: "http", workerLabel: wrkr}).Observe(t)
-}
-
-func (m *Metrics) RecordIngestLatency(createdAt time.Time) {
+func (m *Metrics) RecordIngestLatency(listener string, createdAt time.Time) {
 	if !m.IsEnabled {
 		return
 	}
 	d := time.Since(createdAt)
 	t := float64(d) / float64(time.Millisecond)
 	slog.Info("IngestLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
-	m.IngestLatency.With(prometheus.Labels{listenerLabel: "http"}).Observe(t)
+	m.IngestLatency.With(prometheus.Labels{ListenerLabel: listener}).Observe(t)
 }
 
-func (m *Metrics) IncrementIngestTotal() {
+func (m *Metrics) UpdateTotalDeliverables(eventType string, count int) {
 	if !m.IsEnabled {
 		return
 	}
-	m.IngestTotal.With(prometheus.Labels{listenerLabel: "http"}).Inc()
+	m.TotalDeliverables.With(prometheus.Labels{EventTypeLabel: eventType}).Set(float64(count))
 }
 
-func (m *Metrics) IncrementIngestErrorsTotal(ev *event.Event, wrkr string) {
+func (m *Metrics) RecordPreFlightLatency(listener string, createdAt *time.Time) {
 	if !m.IsEnabled {
 		return
 	}
-	m.IngestErrorsTotal.With(prometheus.Labels{eventTypeLabel: ev.EventType, listenerLabel: "http", workerLabel: wrkr}).Inc()
+	d := time.Since(*createdAt)
+	t := float64(d) / float64(time.Millisecond)
+	m.PreFlightLatency.With(prometheus.Labels{ListenerLabel: listener}).Observe(t)
 }
 
-func (m *Metrics) IncrementIngestSuccessTotal(ev *event.Event, wrkr string) {
+func (m *Metrics) IncTotalDeliveries(eventType string, wrkr string, statusCode string) {
 	if !m.IsEnabled {
 		return
 	}
-	m.IngestSuccessTotal.With(prometheus.Labels{eventTypeLabel: ev.EventType, listenerLabel: "http", workerLabel: wrkr}).Inc()
+	m.TotalDeliveries.With(prometheus.Labels{EventTypeLabel: eventType, WorkerLabel: wrkr, DeliveryStatusLabel: statusCode}).Inc()
 }
 
-func (m *Metrics) IncrementIngestConsumedTotal(ev *event.Event, wrkr string) {
+func (m *Metrics) UpdateWorkerQueueSize(size int) {
 	if !m.IsEnabled {
 		return
 	}
-	m.IngestConsumedTotal.With(prometheus.Labels{listenerLabel: "http", eventTypeLabel: ev.EventType, workerLabel: wrkr}).Inc()
+	m.LocalWorkerQueueSize.With(prometheus.Labels{WorkerLabel: "local"}).Set(float64(size))
 }
 
-func (m *Metrics) UpdateTotalSubscriptionCount(count int) {
+func (m *Metrics) RecordSubscriberDbLatency(owner, eventType string, createdAt *time.Time) {
 	if !m.IsEnabled {
 		return
 	}
-	m.TotalSubscriptions.With(prometheus.Labels{subscriptionTypeLabel: "http"}).Set(float64(count))
+	d := time.Since(*createdAt)
+	t := float64(d) / float64(time.Millisecond)
+	m.SubscriberDbLatency.With(prometheus.Labels{OwnerLabel: owner, EventTypeLabel: eventType}).Observe(t)
 }
 
-func (m *Metrics) RecordFanout(ev *event.Event, size int) {
+func (m *Metrics) RecordDeliveryDbLatency(dbSource string, createdAt *time.Time) {
 	if !m.IsEnabled {
 		return
 	}
-	m.FanoutSize.With(prometheus.Labels{eventTypeLabel: ev.EventType}).Observe(float64(size))
-}
-
-func (m *Metrics) UpdateWorkerQueueSize(wrkr string, size int) {
-	if !m.IsEnabled {
-		return
-	}
-	m.WorkerQueueSize.With(prometheus.Labels{workerLabel: wrkr}).Set(float64(size))
-}
-
-func (m *Metrics) UpdateWorkerThreadCount(wrkr string, count int) {
-	if !m.IsEnabled {
-		return
-	}
-	m.WorkerThreadsTotal.With(prometheus.Labels{workerLabel: wrkr}).Set(float64(count))
+	d := time.Since(*createdAt)
+	t := float64(d) / float64(time.Millisecond)
+	m.DeliveryDbLatency.With(prometheus.Labels{DeliveryDbSourceLabel: dbSource}).Observe(t)
 }
 
 func Reg() *prometheus.Registry {
