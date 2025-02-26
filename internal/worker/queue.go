@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -29,11 +31,25 @@ type QueueWorker struct {
 	ctx     context.Context
 	metrics *metrics.Metrics
 
-	client *asynq.Client
-	server *asynq.Server
+	client     *asynq.Client
+	server     *asynq.Server
+	metricsSrv *http.Server
 
 	marshalers   MarshalerMap
 	unmarshalers UnmarshalerMap
+}
+
+func createMetricsServer(m *metrics.Metrics, workerAddr string) *http.Server {
+	if m != nil && !m.IsEnabled {
+		return nil
+	}
+	httpServeMux := http.NewServeMux()
+	handler := promhttp.HandlerFor(m.Registery, promhttp.HandlerOpts{Registry: m.Registery})
+	httpServeMux.Handle("/metrics", handler)
+	return &http.Server{
+		Addr:    workerAddr,
+		Handler: httpServeMux,
+	}
 }
 
 func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWorker {
@@ -59,6 +75,7 @@ func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWork
 		ID:           "asynq-" + ulid.Make().String(),
 		ctx:          context.Background(),
 		server:       server,
+		metricsSrv:   createMetricsServer(f.Metrics, f.Cfg.Metrics.WorkerAddr),
 		unmarshalers: unmarshalers,
 		metrics:      f.Metrics,
 	}
@@ -82,8 +99,23 @@ func NewQueueWorker(f *app.HookRelayApp, marshalers MarshalerMap) *QueueWorker {
 	}
 }
 
+func (w *QueueWorker) startMetricsServer() {
+	if w.metricsSrv == nil {
+		return
+	}
+	// Start metrics server.
+	go func() {
+		err := w.metricsSrv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			slog.Error("Error: metrics server error", "err", err)
+		}
+	}()
+}
+
 func (c *QueueWorker) StartServer(callback func([]Task) error) error {
 	if c.server != nil {
+		c.startMetricsServer()
+
 		mux := asynq.NewServeMux()
 		mux.HandleFunc(TypeEventDelivery, func(ctx context.Context, t *asynq.Task) error {
 			if unmarshaler, ok := c.unmarshalers[t.Type()]; ok {
@@ -120,6 +152,10 @@ func (c *QueueWorker) Shutdown() {
 
 	if c.server != nil {
 		c.server.Shutdown()
+
+		if c.metricsSrv != nil {
+			c.metricsSrv.Close()
+		}
 	}
 }
 
