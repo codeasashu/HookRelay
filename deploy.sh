@@ -8,8 +8,7 @@ BINARY_PATH="/usr/local/bin/$APP_NAME"
 CFG_FILE="/etc/hookrelay/config.toml"
 LOG_DIR="/var/log/$APP_NAME"
 
-# Compile app
-exec ./build.sh
+# Deploy binary to system
 mv ./bin/$APP_NAME $BINARY_PATH
 chmod +x $BINARY_PATH
 
