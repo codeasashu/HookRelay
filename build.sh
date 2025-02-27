@@ -130,11 +130,9 @@ else
     echo "Using VERSION file for version: ${VERSION_APP}"
 fi
 
-PATH_FILE_BIN_FINAL="${PATH_FILE_BIN}-${GOOS}-${GOARCH}${GOARM_SUFFIX}"
-
 # Build as static linked binary
-echo '- Building static linked binary to ...'
-echo "  ${PATH_FILE_BIN_FINAL}"
+echo '- Building binary to ...'
+echo "  ${PATH_FILE_BIN}"
 echo "  Ver: ${VERSION_APP}"
 
 if CGO_ENABLED=1 GOOS="$GOOS" \
@@ -143,7 +141,7 @@ if CGO_ENABLED=1 GOOS="$GOOS" \
     go build \
     -installsuffix "$NAME_FILE_BIN" \
     -ldflags="-s -w -X 'main.Version=${VERSION_APP}'" \
-    -o="$PATH_FILE_BIN_FINAL" \
+    -o="$PATH_FILE_BIN" \
     main.go; then
     exit $SUCCESS
 fi

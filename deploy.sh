@@ -4,49 +4,48 @@ set -e
 
 # Variables
 APP_NAME="hookrelay"
-APP_DIR="/etc/$APP_NAME"
 BINARY_PATH="/usr/local/bin/$APP_NAME"
-SERVICE_FILE="/etc/systemd/system/$APP_NAME.service"
-SYSLOG_FILE="/etc/rsyslog.d/50-$APP_NAME.conf"
-LOG_FILE="/var/log/$APP_NAME.log"
-
-# Create application directory
-mkdir -p $APP_DIR
+CFG_FILE="/etc/hookrelay/config.toml"
+LOG_DIR="/var/log/$APP_NAME"
 
 # Compile app
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o $APP_NAME main.go
-mv ./$APP_NAME $BINARY_PATH
+exec ./build.sh
+mv ./bin/$APP_NAME $BINARY_PATH
 chmod +x $BINARY_PATH
 
 # Create systemd service
-cat >$SERVICE_FILE <<EOF
-[Unit]
-Description=$APP_NAME
-After=network.target
+cat >/etc/supervisor/conf.d/$APP_NAME.conf <<EOF
+[group:$APP_NAME]
+programs=server,worker
 
-[Service]
-Environment='CFGFILE=$APP_DIR/config.toml'
-ExecStartPre=/bin/rm -rf /tmp/$APP_NAME
-ExecStart=$BINARY_PATH server -c \${CFGFILE} -l
-Restart=always
-StandardOutput=journal+console
-StandardError=journal+console
-SyslogIdentifier=$APP_NAME
-SyslogFacility=local3
-LimitNOFILE=100000
+[program:server]
+command=$BINARY_PATH server -c $CFG_FILE
+startsecs=3
+autostart=true
+autorestart=true
+stopsignal=INT
+killasgroup=true
+environment=LANG=en_US.UTF-8,LC_ALL=en_US.UTF-8
+user=root
+stdout_logfile=$LOG_DIR/server.log
+stderr_logfile=$LOG_DIR/server_err.log
 
-[Install]
-WantedBy=multi-user.target
+
+[program:worker]
+process_name=%(program_name)s_%(process_num)02d
+command=$BINARY_PATH worker -c $CFG_FILE
+startsecs=3
+autostart=true
+autorestart=true
+stopsignal=INT
+killasgroup=true
+environment=LANG=en_US.UTF-8,LC_ALL=en_US.UTF-8
+user=root
+numprocs=1
+stdout_logfile=$LOG_DIR/%(program_name)s_%(process_num)02d.log
+stderr_logfile=$LOG_DIR/%(program_name)s_%(process_num)02d_err.log
 EOF
 
-# Create rsyslog entry
-echo "local3.*        $LOG_FILE" >$SYSLOG_FILE
-touch $SYSLOG_FILE
-chown syslog:adm $SYSLOG_FILE
-chmod 644 $SYSLOG_FILE
-
-# Reload systemd and start service
-sudo systemctl daemon-reload
-systemctl restart rsyslog
-systemctl start $APP_NAME
-systemctl enable $APP_NAME
+# Reload supervisor
+supervisorctl reread
+supervisorctl update $APP_NAME
