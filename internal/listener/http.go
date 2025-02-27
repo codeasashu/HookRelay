@@ -2,8 +2,6 @@ package listener
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -52,17 +50,15 @@ func (l *HTTPListener) InitApiRoutes() {
 	{
 		v1 := l.router.Group("/event")
 		v1.POST("", func(c *gin.Context) {
-			slog.Info("Received HTTP Event")
-			// i := r.URL.Query().Get("id")
 			e, err := l.transformEvent(c.Request)
-			l.metrics.RecordIngestLatency("http", e.CreatedAt)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": err.Error()})
 				return
 			}
+			l.metrics.IncrementIngestTotal("http")
+			l.metrics.RecordIngestLatency("http", e.CreatedAt)
 			l.listenerChan <- e
 			c.JSON(http.StatusOK, gin.H{"status": "success", "message": "event received"})
-			slog.Info("Replied to HTTP Event")
 		})
 	}
 }
@@ -74,7 +70,7 @@ func (l *HTTPListener) setupWorker() {
 			if event == nil {
 				return
 			}
-			slog.Info("Received event from listener channel", "event", event)
+			slog.Info("listener channel picked event", "trace_id", event.TraceId)
 			if l.wal != nil {
 				l.wal.Log(event.LogEvent)
 			}
@@ -82,20 +78,19 @@ func (l *HTTPListener) setupWorker() {
 			subscriptions, err := l.subscription.FindSubscriptionsByEventTypeAndOwner(event.EventType, event.OwnerId)
 			l.metrics.RecordSubscriberDbLatency(event.OwnerId, event.EventType, &startTime)
 			if err != nil {
-				slog.Error("error fetching subscriptions", "err", err)
+				slog.Error("error fetching subscriptions", "trace_id", event.TraceId, "err", err)
 				continue
 			}
 			l.metrics.UpdateTotalDeliverables(event.EventType, len(subscriptions))
-			slog.Info("fetched subscriptions", "event_id", event.UID, "fanout", len(subscriptions), "event_type", event.EventType, "owner_id", event.OwnerId)
 			if len(subscriptions) == 0 {
+				slog.Warn("no event subscriptions found", "event_type", event.EventType, "trace_id", event.TraceId, "fanout", len(subscriptions), "owner_id", event.OwnerId)
 				continue
 			}
+			slog.Info("fetched event subscriptions", "event_type", event.EventType, "trace_id", event.TraceId, "fanout", len(subscriptions), "owner_id", event.OwnerId)
 			for _, sub := range subscriptions {
-				deliver := delivery.NewEventDelivery(event, &sub)
-				err := l.delivery.Schedule(deliver)
-				// err := l.workerPool.Schedule(deliver)
+				err := l.delivery.Schedule(event, &sub)
 				if err != nil {
-					slog.Error("error scheduling job", "delivery_id", deliver.ID, "err", err)
+					slog.Error("error scheduling event", "trace_id", event.TraceId, "subscription_id", sub.ID, "err", err)
 					continue
 				}
 			}
@@ -108,15 +103,12 @@ func (l *HTTPListener) setupWorker() {
 }
 
 func (l *HTTPListener) transformEvent(req *http.Request) (*event.Event, error) {
-	decoder := json.NewDecoder(req.Body)
-	event := event.New()
-	err := decoder.Decode(event)
+	// Get `X-MYOP-TRACE-ID` header from req
+	event, err := event.NewFromHTTP(req)
 	if err != nil {
-		return nil, errors.New("failed to decode event payload. invalid json")
+		return nil, err
 	}
-	l.metrics.IncrementIngestTotal("http")
 	event.Ack()
-	slog.Info("Acknowledge evnet", "id", event.UID, "type", event.EventType)
 	return event, nil
 }
 

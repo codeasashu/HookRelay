@@ -1,14 +1,16 @@
 package delivery
 
 import (
+	"encoding/json"
 	"errors"
-	"log/slog"
 	"strconv"
 	"time"
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/database"
+	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
+	"github.com/codeasashu/HookRelay/internal/subscription"
 	"github.com/codeasashu/HookRelay/internal/wal"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/gin-gonic/gin"
@@ -42,9 +44,25 @@ func NewHTTPDelivery(a *app.HookRelayApp, wp *worker.WorkerPool) (*HTTPDelivery,
 	return &HTTPDelivery{db: a.DeliveryDb, router: a.Router, metrics: a.Metrics, wp: wp, wl: a.WAL}, nil
 }
 
-func (d *HTTPDelivery) Schedule(job *EventDelivery) error {
-	slog.Info("scheduling job", "dd", job.EventType)
-	return d.wp.Schedule(job, false)
+func (d *HTTPDelivery) Schedule(e *event.Event, s *subscription.Subscriber) error {
+	payloadBytes, cerr := json.Marshal(e.Payload)
+	if cerr != nil {
+		payloadBytes = []byte("{}")
+	}
+	ed := &EventDelivery{
+		EventType:      e.EventType,
+		Payload:        payloadBytes,
+		StartAt:        e.CreatedAt,
+		OwnerId:        e.OwnerId,
+		SubscriptionId: s.ID,
+		CompleteAt:     time.Now(), // @TODO: Use zero time/nil value to indicate incomplete event
+		StatusCode:     0,
+		TraceId:        e.TraceId,
+
+		Subscriber: s,
+		MaxRetries: 1,
+	}
+	return d.wp.Schedule(ed, false)
 }
 
 func (d *HTTPDelivery) InitApiRoutes() {

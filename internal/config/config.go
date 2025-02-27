@@ -13,6 +13,7 @@ import (
 const (
 	DefaultConfigName     = "hookrelay"
 	DefaultConfigDir      = "."
+	TraceIDHeaderName     = "X-Hookrelay-Trace-Id"
 	defaultConfigTemplate = `# Configuration file for HookRelay
 [listener]
 http.queue_size = 1024

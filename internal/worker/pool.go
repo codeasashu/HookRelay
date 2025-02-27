@@ -2,6 +2,7 @@ package worker
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -42,6 +43,7 @@ type Worker interface {
 
 type Task interface {
 	GetID() string
+	GetTraceID() string
 	GetType() string
 	Execute(worker Worker) error
 	Retries() int
@@ -92,16 +94,16 @@ func (wp *WorkerPool) ShouldUseRemote(job Task, isRetrying bool) bool {
 	return (!localIsReady && remoteIsReady) || (isRetrying && remoteIsReady)
 }
 
-func (wp *WorkerPool) Schedule(job Task, isRetrying bool) error {
-	if wp.ShouldUseRemote(job, isRetrying) {
-		slog.Info("scheduling job to queue worker", "job", job)
-		return wp.queueWorker.Enqueue(job)
+func (wp *WorkerPool) Schedule(t Task, isRetrying bool) error {
+	if wp.ShouldUseRemote(t, isRetrying) {
+		slog.Info("scheduling job to queue worker", "trace_id", t.GetTraceID(), "isRetrying", isRetrying)
+		return wp.queueWorker.Enqueue(t)
 	}
 	if wp.localWorker != nil {
-		slog.Info("scheduling job to local worker", "job", job)
-		return wp.localWorker.Enqueue(job)
+		slog.Info("scheduling job to local worker", "trace_id", t.GetTraceID(), "isRetrying", isRetrying)
+		return wp.localWorker.Enqueue(t)
 	}
-	return errors.New("error scheduling job. no worker available")
+	return fmt.Errorf("error scheduling job (trace_id=%s). no worker available", t.GetTraceID())
 }
 
 func (wp *WorkerPool) Shutdown() {

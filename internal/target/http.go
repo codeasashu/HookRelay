@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/codeasashu/HookRelay/internal/config"
 )
 
 type HTTPMethod string
@@ -66,7 +68,7 @@ func (t *Target) SetHeaders(req *http.Request) *http.Request {
 	return req
 }
 
-func (target *Target) ProcessTarget(payload []byte) (int, error) {
+func (target *Target) ProcessTarget(payload []byte, traceId string) (int, error) {
 	if target.Type != TargetHTTP {
 		slog.Error("unsupported target type", "type", target.Type)
 		return 0, errors.New("unsupported target type")
@@ -82,9 +84,19 @@ func (target *Target) ProcessTarget(payload []byte) (int, error) {
 		target.HTTPDetails.Method = DefaultMethod
 	}
 
+	logAttrs := []any{
+		"method", string(target.HTTPDetails.Method),
+		"url", string(target.HTTPDetails.URL),
+	}
+
 	var req *http.Request
 	var err error
 	var bodyReader io.Reader = http.NoBody
+
+	if traceId != "" {
+		target.HTTPDetails.Headers[config.TraceIDHeaderName] = traceId
+		logAttrs = append(logAttrs, "trace_id", traceId)
+	}
 
 	// Handle POST request with different Content-Types
 	if target.HTTPDetails.Method == POSTMethod {
@@ -139,11 +151,7 @@ func (target *Target) ProcessTarget(payload []byte) (int, error) {
 		}
 	}
 
-	logAttrs := []any{
-		"method", string(target.HTTPDetails.Method),
-		"url", string(target.HTTPDetails.URL),
-		"headers", fmt.Sprintf("%+v", sanitizedHeaders),
-	}
+	logAttrs = append(logAttrs, "headers", fmt.Sprintf("%+v", sanitizedHeaders))
 
 	// Log BasicAuth username if provided
 	if target.HTTPDetails.BasicAuth.Username != "" {
@@ -156,7 +164,7 @@ func (target *Target) ProcessTarget(payload []byte) (int, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Error("failed to send HTTP request", "err", err)
+		slog.Error("failed to send HTTP request", "trace_id", traceId, "err", err)
 		return 0, err
 	}
 	defer resp.Body.Close()
@@ -164,7 +172,7 @@ func (target *Target) ProcessTarget(payload []byte) (int, error) {
 	// Read 250 bytes and log the response
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 250))
 	if err != nil {
-		slog.Error("failed to read HTTP response", "err", err)
+		slog.Error("failed to read HTTP response", "trace_id", traceId, "err", err)
 		return 0, err
 	}
 
@@ -176,13 +184,12 @@ func (target *Target) ProcessTarget(payload []byte) (int, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		targetResponse.Status = TargetStatus(StatusErr)
-		slog.Error("invalid HTTP status", "status", resp.Status)
+		slog.Error("invalid HTTP status", "trace_id", traceId, "status", resp.Status)
 		return resp.StatusCode, errors.New("Non-200 Status: " + resp.Status)
 	}
 
-	slog.Info("got HTTP reply", "status", resp.Status)
-	slog.Debug("got full HTTP response body", "body", string(body))
-	slog.Info("got HTTP response body (truncated)", "body", string(body[:min(100, len(body))]))
+	slog.Debug("got full HTTP response body", "trace_id", traceId, "body", string(body))
+	slog.Info("got HTTP response body (truncated)", "trace_id", traceId, "body", string(body[:min(100, len(body))]))
 
 	target.HTTPResponse = targetResponse
 	return resp.StatusCode, nil

@@ -202,15 +202,15 @@ func (w *QueueWorker) GetType() WorkerType {
 }
 
 func (w *QueueWorker) Dequeue(j Task, callback func([]Task) error) error {
-	slog.Info("Processing job", "job_id", j, "event_id", j)
+	slog.Info("remote worker processing task", "trace_id", j.GetTraceID(), "event_id", j)
 	err := j.Execute(w) // Update job result
 	// Update total deliveries
 	j.IncDeliveries()
 	callback([]Task{j})
 	if err != nil {
-		slog.Error("error processing job", "job_id", j, "error", err)
+		slog.Error("error processing job", "trace_id", j.GetTraceID(), "error", err)
 		return err
 	}
-	slog.Info("job complete. sending result", "job_id", j)
+	slog.Info("job complete. sending result", "trace_id", j.GetTraceID())
 	return nil
 }

@@ -253,7 +253,6 @@ func (w *WALSQLite) ForEachRotation(callbacks []func(db *sql.DB) error) error {
 	})
 
 	currTime := time.Now().Format(w.cfg.Format)
-	slog.Info("picking WAL files < ", slog.Any("time", currTime))
 	// Remove most recent entry from walFiles if walFiles[0] is the current time
 	if walFiles[0].Name()[4:walFileLen] == currTime {
 		walFiles = walFiles[1:]

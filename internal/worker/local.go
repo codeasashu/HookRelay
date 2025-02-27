@@ -138,15 +138,15 @@ func (w *LocalWorker) launchThread() {
 
 		for {
 			select {
-			case job := <-w.JobQueue:
-				slog.Info("got job item", "job_id", job.GetID())
-				err := job.Execute(w)
-				job.IncDeliveries()
-				retryErr := w.handleRetry(job, err)
+			case task := <-w.JobQueue:
+				slog.Info("local worker processing task", "trace_id", task.GetTraceID())
+				err := task.Execute(w)
+				task.IncDeliveries()
+				retryErr := w.handleRetry(task, err)
 				if retryErr != nil {
 					slog.Error("retry error", "err", retryErr)
 				}
-				w.resultQueue <- job
+				w.resultQueue <- task
 			case <-w.StopChan:
 				return
 			}
@@ -154,8 +154,8 @@ func (w *LocalWorker) launchThread() {
 	}()
 }
 
-func (w *LocalWorker) handleRetry(job Task, err error) error {
-	jobId := job.GetID()
+func (w *LocalWorker) handleRetry(t Task, err error) error {
+	jobId := t.GetID()
 	defaultVal := int32(0)
 	count, _ := w.seen.LoadOrStore(jobId, &defaultVal)
 	duplicateCount := *count.(*int32) // copy by value, for comparisons
@@ -163,8 +163,9 @@ func (w *LocalWorker) handleRetry(job Task, err error) error {
 	w.seen.Store(jobId, &newCount)
 
 	if err != nil {
-		if int(duplicateCount) < job.Retries() {
-			w.wp.Schedule(job, true)
+		if int(duplicateCount) < t.Retries() {
+			slog.Info("retrying task", "trace_id", t.GetTraceID())
+			w.wp.Schedule(t, true)
 		} else {
 			return ErrTooManyRetry
 		}

@@ -40,7 +40,7 @@ func NewConsoleLogger(cfg config.LoggingConfig) *slog.Logger {
 }
 
 func New(cfg config.LoggingConfig) *slog.Logger {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
+	zerolog.TimeFieldFormat = time.RFC3339Nano
 	switch cfg.LogFormat {
 	case "json":
 		return NewJsonLogger(cfg)

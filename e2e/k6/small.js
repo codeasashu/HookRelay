@@ -88,7 +88,10 @@ export default function (data) {
   };
 
   const res = http.post(`${baseUrl}/event`, JSON.stringify(event), {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Hookrelay-Trace-Id": "webhook123",
+    },
   });
 
   // Check response
