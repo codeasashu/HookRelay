@@ -137,12 +137,12 @@ echo '- Building static linked binary to ...'
 echo "  ${PATH_FILE_BIN_FINAL}"
 echo "  Ver: ${VERSION_APP}"
 
-if GOOS="$GOOS" \
+if CGO_ENABLED=1 GOOS="$GOOS" \
     GOARCH="$GOARCH" \
     GOARM="$GOARM" \
     go build \
     -installsuffix "$NAME_FILE_BIN" \
-    -ldflags="-s -w -extldflags \"-static\" -X 'main.Version=${VERSION_APP}'" \
+    -ldflags="-s -w -X 'main.Version=${VERSION_APP}'" \
     -o="$PATH_FILE_BIN_FINAL" \
     main.go; then
     exit $SUCCESS
