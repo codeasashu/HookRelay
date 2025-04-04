@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/logger"
@@ -18,6 +21,8 @@ type HookRelayApp struct {
 	Ctx     context.Context
 	Cfg     *config.Config
 	Metrics *metrics.Metrics
+
+	SQSClient *sqs.Client
 
 	Router     *gin.Engine
 	HttpServer *http.Server
@@ -52,6 +57,7 @@ func NewApp(cfg *config.Config, ctx context.Context, skipWal bool) (*HookRelayAp
 	app.HttpServer = newServer(app)
 	app.Metrics = initMetrics(app)
 	app.Logger = initLogger(app)
+	app.SQSClient = initSQS(app)
 
 	if !skipWal {
 		wl, err := initWAL(app)
@@ -89,6 +95,16 @@ func (a *HookRelayApp) InitDeliveryDb() error {
 	db, err := deliveryDb(a)
 	a.DeliveryDb = db
 	return err
+}
+
+func initSQS(a *HookRelayApp) *sqs.Client {
+	awsCfg := aws.Config{
+		Region: a.Cfg.Aws.Region,
+		Credentials: aws.NewCredentialsCache(
+			credentials.NewStaticCredentialsProvider(a.Cfg.Aws.AccessKeyID, a.Cfg.Aws.SecretKey, ""),
+		),
+	}
+	return sqs.NewFromConfig(awsCfg)
 }
 
 func initMetrics(f *HookRelayApp) *metrics.Metrics {

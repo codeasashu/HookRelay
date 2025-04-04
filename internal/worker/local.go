@@ -54,7 +54,7 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) e
 		wp:          wp,
 	}
 	slog.Info("staring pool of local workers", "children", f.Cfg.LocalWorker.ResultHandlerThreads)
-	for i := 0; i < f.Cfg.LocalWorker.ResultHandlerThreads; i++ {
+	for range f.Cfg.LocalWorker.ResultHandlerThreads {
 		go ProcessBatchResults(localClient.resultQueue, callback)
 	}
 

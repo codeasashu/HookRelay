@@ -76,6 +76,11 @@ db.password = "admin"
 db.database = "hookrelay"
 db.options = "tls-insecure-skip-verify=false&connect_timeout=30"
 db.port = 3306
+
+[aws]
+aws_access_key_id = ""
+aws_secret_access_key = ""
+aws_region = "ap-south-1"
 `
 )
 
@@ -158,6 +163,12 @@ type SubscriptionConfig struct {
 	Database DatabaseConfig `mapstructure:"db"`
 }
 
+type AwsConfig struct {
+	AccessKeyID string `mapstructure:"aws_access_key_id"`
+	SecretKey   string `mapstructure:"aws_secret_access_key"`
+	Region      string `mapstructure:"aws_region"`
+}
+
 type DeliveryConfig struct {
 	Database DatabaseConfig `mapstructure:"db"`
 }
@@ -168,6 +179,7 @@ type Config struct {
 	Metrics   MetricsConfig  `mapstructure:"metrics"`
 	Logging   LoggingConfig  `mapstructure:"logging"`
 	WalConfig WALConfig      `mapstructure:"wal"`
+	Aws       AwsConfig      `mapstructure:"aws"`
 
 	// Subscription
 	Subscription SubscriptionConfig `mapstructure:"subscription"`
