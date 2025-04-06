@@ -234,7 +234,7 @@ func (w *WALSQLite) ForEachRotation(callbacks []func(db *sql.DB) error) error {
 	}
 
 	if len(walFiles) == 0 {
-		return fmt.Errorf("no valid WAL files found in log directory")
+		return nil
 	}
 
 	walFileLen := len(w.cfg.Format) + 4 // include prefix in overall len

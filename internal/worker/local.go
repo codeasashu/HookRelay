@@ -20,19 +20,19 @@ type LocalWorker struct {
 	ctx           context.Context
 	client        string
 	JobQueue      chan Task
-	resultQueue   chan Task
 	MaxThreads    int            // Maximum allowed threads
 	MinThreads    int            // Minimum threads to keep alive
 	activeThreads int32          // Active thread count (atomic counter)
 	StopChan      chan struct{}  // Signal for stopping the worker
 	wg            sync.WaitGroup // WaitGroup for graceful shutdown
+	Fanout        *FanOut
 
 	seen sync.Map
 
 	wp *WorkerPool
 }
 
-func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) error) *LocalWorker {
+func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool) *LocalWorker {
 	minThreads := f.Cfg.LocalWorker.MinThreads
 	maxThreads := f.Cfg.LocalWorker.MaxThreads
 	if maxThreads != -1 && maxThreads < minThreads {
@@ -41,21 +41,17 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) e
 	}
 
 	localClient := &LocalWorker{
-		ID:          "local-" + ulid.Make().String(),
-		metrics:     f.Metrics,
-		ctx:         f.Ctx,
-		queueuSize:  f.Cfg.LocalWorker.QueueSize,
-		client:      "",
-		JobQueue:    make(chan Task, f.Cfg.LocalWorker.QueueSize/2), // Buffer size for sending events
-		resultQueue: make(chan Task, f.Cfg.LocalWorker.QueueSize/2), // Buffer size for processing results
-		MaxThreads:  maxThreads,
-		MinThreads:  minThreads,
-		StopChan:    make(chan struct{}),
-		wp:          wp,
-	}
-	slog.Info("staring pool of local workers", "children", f.Cfg.LocalWorker.ResultHandlerThreads)
-	for range f.Cfg.LocalWorker.ResultHandlerThreads {
-		go ProcessBatchResults(localClient.resultQueue, callback)
+		ID:         "local-" + ulid.Make().String(),
+		metrics:    f.Metrics,
+		ctx:        f.Ctx,
+		queueuSize: f.Cfg.LocalWorker.QueueSize,
+		client:     "",
+		JobQueue:   make(chan Task, f.Cfg.LocalWorker.QueueSize),
+		MaxThreads: maxThreads,
+		MinThreads: minThreads,
+		StopChan:   make(chan struct{}),
+		wp:         wp,
+		Fanout:     NewFanOut(),
 	}
 
 	localClient.ReceiveJob()
@@ -65,7 +61,7 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func([]Task) e
 
 func (c *LocalWorker) IsReady() bool {
 	// Returns true if the queue is less than 40% full (coz only half the queue is alloted to JobQueue)
-	return len(c.JobQueue) < int(math.Ceil((float64(c.queueuSize)/10)*4))
+	return len(c.JobQueue) < int(math.Ceil((float64(c.queueuSize)/10)*8))
 }
 
 func (c *LocalWorker) Ping() error {
@@ -80,7 +76,7 @@ func (c *LocalWorker) Enqueue(job Task) error {
 
 func (c *LocalWorker) ReceiveJob() {
 	slog.Info("setting up local worker threads", "count", c.MinThreads)
-	for i := 0; i < c.MinThreads; i++ {
+	for range c.MinThreads {
 		c.launchThread()
 	}
 	go c.scaleThreads(1 * time.Second)
@@ -122,9 +118,14 @@ func (w *LocalWorker) GetType() WorkerType {
 	return WorkerType("local")
 }
 
+func (w *LocalWorker) BroadcastResult(t Task) {
+	if w.Fanout != nil {
+		w.Fanout.Broadcast(t)
+	}
+}
+
 // launchThread starts a new thread to process jobs.
 func (w *LocalWorker) launchThread() {
-	// app := cli.GetAppInstance()
 	w.wg.Add(1)
 	atomic.AddInt32(&w.activeThreads, 1)
 
@@ -146,7 +147,7 @@ func (w *LocalWorker) launchThread() {
 				if retryErr != nil {
 					slog.Error("retry error", "err", retryErr)
 				}
-				w.resultQueue <- task
+				w.BroadcastResult(task)
 			case <-w.StopChan:
 				return
 			}
@@ -185,40 +186,4 @@ func (w *LocalWorker) Shutdown() {
 	close(w.StopChan)
 	w.wg.Wait()
 	close(w.JobQueue)
-	close(w.resultQueue)
-}
-
-func ProcessBatchResults(jobChan <-chan Task, callback func([]Task) error) {
-	const batchSize = 100
-	const flushInterval = 500 * time.Millisecond
-
-	var batch []Task
-	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case job, ok := <-jobChan:
-			if !ok {
-				// Channel closed, flush remaining events
-				if len(batch) > 0 {
-					callback(batch)
-				}
-				return
-			}
-
-			// m.IncrementIngestConsumedTotal(job.Event, "local")
-			batch = append(batch, job)
-
-			if len(batch) >= batchSize {
-				callback(batch)
-				batch = nil // Reset batch
-			}
-		case <-ticker.C:
-			if len(batch) > 0 {
-				callback(batch)
-				batch = nil // Reset batch
-			}
-		}
-	}
 }

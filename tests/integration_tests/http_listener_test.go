@@ -63,17 +63,15 @@ func setupMockApp(t *testing.T, mockDb *mocks.MockDatabase) *app.HookRelayApp {
 	}
 	mainApp.HttpClient = &http.Client{Timeout: 5 * time.Second}
 	mainApp.SubscriptionDb = mockDb
-	mainApp.DeliveryDb = mockDb
 
 	wp := worker.InitPool(mainApp)
-	localWorker := worker.CreateLocalWorker(mainApp, wp, delivery.SaveDeliveries(mainApp))
+	localWorker := worker.NewLocalWorker(mainApp, wp)
 	wp.SetLocalClient(localWorker)
 
 	deliveryApp, err := delivery.NewHTTPDelivery(mainApp, wp)
 	if err != nil {
 		t.Fatalf("Failed to create delivery: %v", err)
 	}
-	deliveryApp.InitApiRoutes()
 	subscriptionApp, err := subscription.NewSubscription(mainApp, false)
 	if err != nil {
 		t.Fatalf("Failed to create subscription: %v", err)

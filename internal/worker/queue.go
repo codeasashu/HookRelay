@@ -37,6 +37,7 @@ type QueueWorker struct {
 
 	marshalers   MarshalerMap
 	unmarshalers UnmarshalerMap
+	Fanout       *FanOut
 }
 
 func createMetricsServer(m *metrics.Metrics, workerAddr string) *http.Server {
@@ -78,6 +79,7 @@ func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWork
 		metricsSrv:   createMetricsServer(f.Metrics, f.Cfg.Metrics.WorkerAddr),
 		unmarshalers: unmarshalers,
 		metrics:      f.Metrics,
+		Fanout:       NewFanOut(),
 	}
 }
 
@@ -112,7 +114,13 @@ func (w *QueueWorker) startMetricsServer() {
 	}()
 }
 
-func (c *QueueWorker) StartServer(callback func([]Task) error) error {
+func (w *QueueWorker) BroadcastResult(t Task) {
+	if w.Fanout != nil {
+		w.Fanout.Broadcast(t)
+	}
+}
+
+func (c *QueueWorker) StartServer() error {
 	if c.server != nil {
 		c.startMetricsServer()
 
@@ -123,7 +131,7 @@ func (c *QueueWorker) StartServer(callback func([]Task) error) error {
 				if err != nil {
 					return err
 				}
-				return c.Dequeue(j, callback)
+				return c.Dequeue(j)
 			}
 			return errors.ErrUnsupported
 		})
@@ -168,10 +176,7 @@ func (c *QueueWorker) Enqueue(job Task) error {
 	t := asynq.NewTask(TypeEventDelivery, payload)
 
 	// Add retry
-	retiresLeft := job.Retries() - job.NumDeliveries()
-	if retiresLeft < 0 {
-		retiresLeft = 0
-	}
+	retiresLeft := max(job.Retries()-job.NumDeliveries(), 0)
 	info, err := c.client.Enqueue(t, asynq.Queue(QueueName), asynq.MaxRetry(retiresLeft))
 	if err != nil {
 		slog.Error("could not enqueue task", "err", err)
@@ -201,12 +206,12 @@ func (w *QueueWorker) GetType() WorkerType {
 	return WorkerType("queue")
 }
 
-func (w *QueueWorker) Dequeue(j Task, callback func([]Task) error) error {
+func (w *QueueWorker) Dequeue(j Task) error {
 	slog.Info("remote worker processing task", "trace_id", j.GetTraceID(), "event_id", j)
 	err := j.Execute(w) // Update job result
 	// Update total deliveries
 	j.IncDeliveries()
-	callback([]Task{j})
+	w.BroadcastResult(j)
 	if err != nil {
 		slog.Error("error processing job", "trace_id", j.GetTraceID(), "error", err)
 		return err

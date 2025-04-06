@@ -45,15 +45,13 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	mainApp.InitDeliveryDb()
-
 	wrk := worker.NewQueueServer(mainApp, getUnmarshalerMap())
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		slog.Info("staring queue worker")
-		go wrk.StartServer(delivery.SaveDeliveries(mainApp))
+		go wrk.StartServer()
 	}()
 
 	select {
