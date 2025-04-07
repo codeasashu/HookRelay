@@ -140,7 +140,7 @@ func (bp *BillingPublisher) ProcessTasks(ctx context.Context, tasks []worker.Tas
 		bm := &BillingMessage{
 			CompanyID: ownerId,
 		}
-		bm.AddFeature("event", unitCnt)
+		bm.AddFeature("webhook_incall", unitCnt)
 		bp.SendMessage(ctx, bm)
 	}
 
