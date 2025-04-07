@@ -1,20 +1,40 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync"
 )
 
+type FanoutSource string
+
+const FanoutSourceKey FanoutSource = "fanoutSource"
+
 type FanOut struct {
+	SourceName  FanoutSource
 	subscribers map[string]chan Task
 	lock        sync.RWMutex
 }
 
-func NewFanOut() *FanOut {
+func NewFanOut(name string) *FanOut {
 	return &FanOut{
+		SourceName:  FanoutSource(name),
 		subscribers: make(map[string]chan Task),
 	}
+}
+
+func SetFanoutSource(f *FanOut, ctx context.Context) context.Context {
+	return context.WithValue(ctx, FanoutSourceKey, f.SourceName)
+}
+
+func GetFanoutSource(ctx context.Context) string {
+	val := ctx.Value(FanoutSourceKey).(FanoutSource)
+	p := string(val)
+	if p == "" {
+		return "local"
+	}
+	return p
 }
 
 func (f *FanOut) Subscribe(name string, buffer int) (<-chan Task, error) {

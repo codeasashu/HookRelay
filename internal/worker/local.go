@@ -51,7 +51,7 @@ func NewLocalWorker(f *app.HookRelayApp, wp *WorkerPool) *LocalWorker {
 		MinThreads: minThreads,
 		StopChan:   make(chan struct{}),
 		wp:         wp,
-		Fanout:     NewFanOut(),
+		Fanout:     NewFanOut("local"),
 	}
 
 	localClient.ReceiveJob()

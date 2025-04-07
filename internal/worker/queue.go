@@ -79,7 +79,7 @@ func NewQueueServer(f *app.HookRelayApp, unmarshalers UnmarshalerMap) *QueueWork
 		metricsSrv:   createMetricsServer(f.Metrics, f.Cfg.Metrics.WorkerAddr),
 		unmarshalers: unmarshalers,
 		metrics:      f.Metrics,
-		Fanout:       NewFanOut(),
+		Fanout:       NewFanOut("queue"),
 	}
 }
 

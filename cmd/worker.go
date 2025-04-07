@@ -49,7 +49,7 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 	wrk := worker.NewQueueServer(mainApp, getUnmarshalerMap())
 
 	// Add publishers to worker result threada
-	billingPublisher := publisher.NewBillingPublisher(mainApp.Ctx, &mainApp.Cfg.Billing)
+	billingPublisher := publisher.NewBillingPublisher(mainApp, &mainApp.Cfg.Billing)
 	billingPublisher.SQSPublisher(ctx, wrk.Fanout)
 
 	wg.Add(1)

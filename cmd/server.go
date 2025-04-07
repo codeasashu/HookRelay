@@ -68,7 +68,7 @@ func handleServer(cmd *cobra.Command, args []string) error {
 	wp.SetQueueClient(queueWorker)
 
 	// Add publishers to worker result threada
-	billingPublisher := publisher.NewBillingPublisher(mainApp.Ctx, &mainApp.Cfg.Billing)
+	billingPublisher := publisher.NewBillingPublisher(mainApp, &mainApp.Cfg.Billing)
 	billingPublisher.SQSPublisher(ctx, localWorker.Fanout)
 	if mainApp.WAL != nil {
 		publisher.WALPublisher(mainApp.WAL, localWorker.Fanout)

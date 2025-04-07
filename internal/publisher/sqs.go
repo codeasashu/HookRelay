@@ -10,8 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/delivery"
+	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/google/uuid"
 )
@@ -30,20 +32,21 @@ type BillingMessage struct {
 type BillingPublisher struct {
 	ctx           context.Context
 	client        *sqs.Client
+	metricsC      *metrics.Metrics
 	url           string // SQS url
 	batchMode     bool
 	batchDuration *time.Duration
 	cancelFunc    func()
 }
 
-func NewBillingPublisher(ctx context.Context, cfg *config.BillingConfig) *BillingPublisher {
+func NewBillingPublisher(f *app.HookRelayApp, cfg *config.BillingConfig) *BillingPublisher {
 	awsCfg := aws.Config{
 		Region: cfg.Region,
 		Credentials: aws.NewCredentialsCache(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretKey, ""),
 		),
 	}
-	newCtx, cancel := context.WithCancel(ctx)
+	newCtx, cancel := context.WithCancel(f.Ctx)
 	c := sqs.NewFromConfig(awsCfg)
 
 	batchDur := time.Duration(cfg.BatchDuration) * time.Millisecond
@@ -54,6 +57,7 @@ func NewBillingPublisher(ctx context.Context, cfg *config.BillingConfig) *Billin
 		cancelFunc:    cancel,
 		batchMode:     cfg.BatchMode,
 		batchDuration: &batchDur,
+		metricsC:      f.Metrics,
 	}
 }
 
@@ -69,7 +73,8 @@ func (b *BillingMessage) AddOwnerId(ownerId string) {
 	b.CompanyID = ownerId
 }
 
-func (bp *BillingPublisher) SendMessage(msg *BillingMessage) error {
+func (bp *BillingPublisher) SendMessage(ctx context.Context, msg *BillingMessage) error {
+	startedAt := time.Now()
 	messageAttributes := map[string]types.MessageAttributeValue{
 		"uid": {
 			DataType:    aws.String("String"),
@@ -104,16 +109,22 @@ func (bp *BillingPublisher) SendMessage(msg *BillingMessage) error {
 		MessageBody:       aws.String(string(msgBody)),
 		MessageAttributes: messageAttributes,
 	})
+
+	sourceName := worker.GetFanoutSource(ctx)
 	if err != nil {
 		slog.Error("failed to send message", "err", err)
+		bp.metricsC.IncrementBillingErrored(sourceName)
+		bp.metricsC.RecordBillingLatency(sourceName, startedAt)
 		return err
 	}
 
-	slog.Info("Message sent =============================== !", "msg_id", *output.MessageId)
+	bp.metricsC.IncrementBillingPublished(sourceName)
+	bp.metricsC.RecordBillingLatency(sourceName, startedAt)
+	slog.Info("Message sent!", "msg_id", *output.MessageId)
 	return nil
 }
 
-func (bp *BillingPublisher) ProcessTasks(tasks []worker.Task) error {
+func (bp *BillingPublisher) ProcessTasks(ctx context.Context, tasks []worker.Task) error {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -130,9 +141,11 @@ func (bp *BillingPublisher) ProcessTasks(tasks []worker.Task) error {
 			CompanyID: ownerId,
 		}
 		bm.AddFeature("event", unitCnt)
-		bp.SendMessage(bm)
+		bp.SendMessage(ctx, bm)
 	}
 
+	sourceName := worker.GetFanoutSource(ctx)
+	bp.metricsC.IncrementEventsBilled(sourceName, len(tasks))
 	return nil
 }
 
@@ -149,7 +162,7 @@ func (bp *BillingPublisher) ProcessSQSBatch(ctx context.Context, jobChan <-chan 
 			if !ok {
 				// Channel closed, flush remaining events
 				if len(batch) > 0 {
-					bp.ProcessTasks(batch)
+					bp.ProcessTasks(ctx, batch)
 				}
 				return
 			}
@@ -158,14 +171,14 @@ func (bp *BillingPublisher) ProcessSQSBatch(ctx context.Context, jobChan <-chan 
 			batch = append(batch, task)
 
 			if len(batch) >= batchSize {
-				bp.ProcessTasks(batch)
+				bp.ProcessTasks(ctx, batch)
 				batch = nil // Reset batch
 			}
 		case <-bp.ctx.Done():
 			return
 		case <-ticker.C:
 			if len(batch) > 0 {
-				bp.ProcessTasks(batch)
+				bp.ProcessTasks(ctx, batch)
 				batch = nil // Reset batch
 			}
 		}
@@ -179,7 +192,7 @@ func (bp *BillingPublisher) ProcessSQS(ctx context.Context, jobChan <-chan worke
 			if !ok {
 				return
 			}
-			bp.ProcessTasks([]worker.Task{task})
+			bp.ProcessTasks(ctx, []worker.Task{task})
 		case <-bp.ctx.Done():
 			return
 		}
@@ -194,11 +207,11 @@ func (bp *BillingPublisher) SQSPublisher(ctx context.Context, f *worker.FanOut) 
 	}
 	go func() {
 		defer f.Unsubscribe("sqs")
-
+		newCtx := worker.SetFanoutSource(f, ctx)
 		if bp.batchMode {
-			bp.ProcessSQSBatch(ctx, ch)
+			bp.ProcessSQSBatch(newCtx, ch)
 		} else {
-			bp.ProcessSQS(ctx, ch)
+			bp.ProcessSQS(newCtx, ch)
 		}
 	}()
 	return nil
