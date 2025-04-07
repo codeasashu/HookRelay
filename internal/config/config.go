@@ -74,7 +74,7 @@ aws_secret_access_key = ""
 aws_region = "ap-south-1"
 sqs_url = ""
 batch_mode = 0
-batch_duration = 5000  # in milliseconds
+batch_duration = 500  # in milliseconds
 `
 )
 
