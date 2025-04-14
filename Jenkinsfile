@@ -16,6 +16,7 @@ pipeline {
         anyOf {
           branch pattern: "release/[\\w.]+", comparator: "REGEXP"
           branch  "main"
+          branch  "deployment"
           buildingTag()
           changeRequest branch: 'release/[\\w.]+', comparator: "REGEXP"
         }
