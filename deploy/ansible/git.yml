@@ -6,8 +6,6 @@
     responses:
       (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
       (?i)Password.*: "{{ lookup('env','GITLAB_TOKEN') }}"
-  when: filesFound.matched <= 0
-  # you don't want to show passwords in your logs
   no_log: false
 - name: git fetch
   ansible.builtin.expect:
