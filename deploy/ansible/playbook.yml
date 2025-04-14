@@ -21,8 +21,6 @@
       apt:
         name:
           - supervisor
-          - git
-          - awscli
         update_cache: true
 
     - name: Ensure log directory exists
