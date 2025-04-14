@@ -1,0 +1,65 @@
+---
+- name: Deploy HookRelay App
+  hosts: "{{ host }}"
+  become: true
+
+  vars:
+    app_user: "{{ ansible_user }}"
+    app_name: hookrelay
+    app_dir: "/var/apps/{{ app_name }}"
+    log_dir: "/var/log/app/{{ app_name }}"
+    config_dir: "/etc/{{ app_name }}"
+    repo_url: "https://github.com/codeasashu/HookRelay"
+    s3_config_path: "s3://my-bucket/hookrelay/config.toml"
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - supervisor
+          - git
+          - awscli
+        update_cache: true
+
+    - name: Ensure log directory exists
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure app directory exists
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Clone HookRelay repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: yes
+
+    - name: Build the application
+      command: ./build.sh linux
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Deploy the application
+      command: ./deploy.sh
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Ensure config directory exists
+      file:
+        path: "{{ config_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download config.toml from S3
+      command: aws s3 cp "{{ s3_config_path }}" "{{ config_dir }}/config.toml"
+      environment:
+        AWS_REGION: "us-east-1" # or your relevant region
+
+    - name: Restart HookRelay supervisor process
+      command: supervisorctl restart hookrelay:*

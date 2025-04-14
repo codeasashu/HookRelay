@@ -1,0 +1,13 @@
+---
+plugin: aws_ec2
+regions:
+  - ap-south-1
+compose:
+  ansible_host: public_ip_address
+keyed_groups:
+  - prefix: service
+    key: tags["service"]
+filters:
+  instance-state-name: running
+  tag:service:
+    - incall
