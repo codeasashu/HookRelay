@@ -1,15 +1,15 @@
 ---
 - name: git clone
   ansible.builtin.expect:
-    chdir: "{{ app_dir }}"
-    command: "git clone {{ git_repo }} {{ app_dir }}"
+    chdir: "{{ tempdir.path }}"
+    command: "git clone {{ git_repo }} {{ tempdir.path }}"
     responses:
       (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
       (?i)Password.*: "{{ lookup('env','GITLAB_TOKEN') }}"
   no_log: false
 - name: git fetch
   ansible.builtin.expect:
-    chdir: "{{ app_dir }}"
+    chdir: "{{ tempdir.path }}"
     command: git fetch origin
     responses:
       (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
@@ -18,10 +18,10 @@
 - name: git checkout
   shell: git checkout {{ git_branch }}
   args:
-    chdir: "{{ app_dir }}"
+    chdir: "{{ tempdir.path }}"
 - name: git pull
   ansible.builtin.expect:
-    chdir: "{{ app_dir }}"
+    chdir: "{{ tempdir.path }}"
     command: git pull origin {{ git_branch }}
     responses:
       (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"

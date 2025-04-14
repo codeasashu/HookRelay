@@ -10,7 +10,6 @@
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
     app_user: "{{ ansible_user }}"
     app_name: hookrelay
-    app_dir: "/var/apps/{{ app_name }}"
     log_dir: "/var/log/app/{{ app_name }}"
     config_dir: "/etc/{{ app_name }}"
     repo_url: "https://github.com/codeasashu/HookRelay"
@@ -29,11 +28,11 @@
         state: directory
         mode: "0755"
 
-    - name: Ensure app directory exists
-      file:
-        path: "{{ app_dir }}"
+    - name: Create temp directory for building
+      tempfile:
         state: directory
-        mode: "0755"
+        suffix: hookrelay
+      register: tempdir
 
     - import_tasks: git.yml
       name: Git clone
@@ -41,12 +40,12 @@
     - name: Build the application
       command: ./build.sh linux
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ tempdir.path }}"
 
     - name: Deploy the application
       command: ./deploy.sh
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ tempdir.path }}"
 
     - name: Ensure config directory exists
       file:
