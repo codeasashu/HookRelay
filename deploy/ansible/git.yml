@@ -1,0 +1,32 @@
+---
+- name: git clone
+  ansible.builtin.expect:
+    chdir: "{{ app_dir }}"
+    command: "git clone {{ git_repo }} {{ app_dir }}"
+    responses:
+      (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
+      (?i)Password.*: "{{ lookup('env','GITLAB_TOKEN') }}"
+  when: filesFound.matched <= 0
+  # you don't want to show passwords in your logs
+  no_log: false
+- name: git fetch
+  ansible.builtin.expect:
+    chdir: "{{ app_dir }}"
+    command: git fetch origin
+    responses:
+      (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
+      (?i)Password.*: "{{ lookup('env','GITLAB_TOKEN') }}"
+  no_log: false
+- name: git checkout
+  shell: git checkout {{ git_branch }}
+  args:
+    chdir: "{{ app_dir }}"
+- name: git pull
+  ansible.builtin.expect:
+    chdir: "{{ app_dir }}"
+    command: git pull origin {{ git_branch }}
+    responses:
+      (?i)Username.*: "{{ lookup('env','GITLAB_USER') }}"
+      (?i)Password.*: "{{ lookup('env','GITLAB_TOKEN') }}"
+  # you don't want to show passwords in your logs
+  no_log: false

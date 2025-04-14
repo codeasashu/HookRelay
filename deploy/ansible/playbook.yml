@@ -33,12 +33,8 @@
         state: directory
         mode: "0755"
 
-    - name: Clone HookRelay repository
-      git:
-        repo: "{{ repo_url }}"
-        dest: "{{ app_dir }}"
-        version: main
-        force: yes
+    - import_tasks: git.yml
+      name: Git clone
 
     - name: Build the application
       command: ./build.sh linux

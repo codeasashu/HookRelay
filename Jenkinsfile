@@ -7,6 +7,7 @@ pipeline {
       timestamps()
       parallelsAlwaysFailFast()
       disableConcurrentBuilds()
+      gitLabConnection('gitlab')
       buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '10'))
   }
 
@@ -26,11 +27,24 @@ pipeline {
       }
 
       steps {
+        updateGitlabCommitStatus name: 'approve_deploy', state: 'pending'
         script {
           user_inp = input id: 'deployer', message: 'Select deploy env', parameters: [
             choice(choices: ["staging", "prod", "None"], name: 'deploy_env')
           ]
           env.DEPLOY_TO = user_inp
+        }
+      }
+
+      post {
+        success {
+          updateGitlabCommitStatus name: 'approve_deploy', state: 'success'
+        }
+        failure {
+          updateGitlabCommitStatus name: 'approve_deploy', state: 'failed'
+        }
+        aborted {
+          updateGitlabCommitStatus name: 'approve_deploy', state: 'success'
         }
       }
     }
@@ -42,22 +56,29 @@ pipeline {
       options {
         withAWS(credentials: 'AWS-Credentials-Stage', region: 'ap-south-1')
       }
+      environment {
+        GIT_CREDS = credentials('gitlab-http')
+      }
       steps {
+        updateGitlabCommitStatus name: 'staging_deploy', state: 'pending'
         dir("deploy/ansible") {
           s3Download(file: './config.toml', bucket: 'stage-ecs-env-myop', path: 'hookrelay/config.toml', force: true)
-          sh "ansible-playbook -i inventory/staging.aws_ec2.yml playbook.yml"
+          sh "GITLAB_USER=$GIT_CREDS_USR GITLAB_TOKEN=$GIT_CREDS_PSW ansible-playbook -i inventory/staging.aws_ec2.yml playbook.yml -e git_branch=$GIT_BRANCH -e git_repo=${env.GIT_URL}"
         }
       }
 
       post {
           success {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment complete: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
+            updateGitlabCommitStatus name: 'staging_deploy', state: 'success'
+            slackSend channel: 'jenkins-stage', message: "STAGING deployment complete: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
           }
           failure {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment failed: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'danger'
+            updateGitlabCommitStatus name: 'staging_deploy', state: 'failed'
+            slackSend channel: 'jenkins-stage', message: "STAGING deployment failed: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'danger'
           }
           aborted {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment cancelled: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
+            updateGitlabCommitStatus name: 'staging_deploy', state: 'success'
+            slackSend channel: 'jenkins-stage', message: "STAGING deployment cancelled: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
           }
       }
     }
@@ -70,22 +91,29 @@ pipeline {
       options {
         withAWS(credentials: 'AWS-Credentials', region: 'ap-south-1')
       }
+      environment {
+          GIT_CREDS = credentials('gitlab-http')
+      }
       steps {
+        updateGitlabCommitStatus name: 'green_deploy', state: 'pending'
         dir("deploy/ansible") {
           s3Download(file: './config.toml', bucket: 'prod-ecs-env-myop', path: 'hookrelay/config.toml', force: true)
-          sh "ansible-playbook -i inventory/prod.aws_ec2.yml playbook.yml"
+          sh "GITLAB_USER=$GIT_CREDS_USR GITLAB_TOKEN=$GIT_CREDS_PSW ansible-playbook -i inventory/prod.aws_ec2.yml playbook.yml -e git_branch=$GIT_BRANCH -e git_repo=${env.GIT_URL}"
         }
       }
 
       post {
           success {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment complete: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
+            updateGitlabCommitStatus name: 'green_deploy', state: 'success'
+            slackSend channel: 'jenkins-stage', message: "GREEN deployment complete: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
           }
           failure {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment failed: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'danger'
+            updateGitlabCommitStatus name: 'green_deploy', state: 'failed'
+            slackSend channel: 'jenkins-stage', message: "GREEN deployment failed: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'danger'
           }
           aborted {
-            slackSend channel: 'jenkins-stage', message: "BLUE deployment cancelled: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
+            updateGitlabCommitStatus name: 'green_deploy', state: 'success'
+            slackSend channel: 'jenkins-stage', message: "GREEN deployment cancelled: `${currentBuild.fullDisplayName}` (<${env.BUILD_URL}|Open>)", color: 'good'
           }
       }
     }
