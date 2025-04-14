@@ -1,7 +1,10 @@
 ---
 - name: Deploy HookRelay App
-  hosts: "{{ host }}"
-  become: true
+  hosts: service_incall
+  remote_user: ubuntu
+  become: True
+  become_method: sudo
+  become_user: root
 
   vars:
     app_user: "{{ ansible_user }}"
