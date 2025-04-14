@@ -37,10 +37,15 @@ type Metrics struct {
 	DeliveryLatency     *prometheus.HistogramVec
 	PreFlightLatency    *prometheus.HistogramVec
 	SubscriberDbLatency *prometheus.HistogramVec
-	DeliveryDbLatency   *prometheus.HistogramVec
 
 	// Subscriptions metrics
 	TotalDeliverables *prometheus.GaugeVec
+
+	// Billing
+	TotalBillingPublished *prometheus.CounterVec
+	TotalBillingErrored   *prometheus.CounterVec
+	BillingLatency        *prometheus.HistogramVec
+	TotalEventsBilled     *prometheus.CounterVec
 
 	// Dispatcher metrics
 	TotalDeliveries *prometheus.CounterVec
@@ -73,7 +78,10 @@ func NewMetrics(cfg *config.Config) *Metrics {
 			m.DeliveryLatency,
 			m.LocalWorkerQueueSize,
 			m.SubscriberDbLatency,
-			m.DeliveryDbLatency,
+			m.TotalBillingPublished,
+			m.TotalBillingErrored,
+			m.TotalEventsBilled,
+			m.BillingLatency,
 			qw,
 		)
 
@@ -82,15 +90,15 @@ func NewMetrics(cfg *config.Config) *Metrics {
 }
 
 const (
-	EventTypeLabel        = "event_type"
-	DeliveryStatusLabel   = "status_code"
-	ListenerLabel         = "listener"
-	DeliveryLabel         = "deliver"
-	OwnerLabel            = "owner_id"
-	TargetUrlLabel        = "url"
-	TargetMethodLabel     = "method"
-	WorkerLabel           = "worker"
-	DeliveryDbSourceLabel = "db_source"
+	EventTypeLabel      = "event_type"
+	DeliveryStatusLabel = "status_code"
+	ListenerLabel       = "listener"
+	DeliveryLabel       = "deliver"
+	OwnerLabel          = "owner_id"
+	TargetUrlLabel      = "url"
+	TargetMethodLabel   = "method"
+	WorkerLabel         = "worker"
+	SQSQueueLabel       = "sqs_queue"
 )
 
 func InitMetrics(cfg *config.MetricsConfig) *Metrics {
@@ -174,13 +182,34 @@ func InitMetrics(cfg *config.MetricsConfig) *Metrics {
 			},
 			[]string{OwnerLabel, EventTypeLabel},
 		),
-		DeliveryDbLatency: prometheus.NewHistogramVec(
+		TotalBillingPublished: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hookrelay_total_billing_published",
+				Help: "Total number of billing event delivered",
+			},
+			[]string{WorkerLabel},
+		),
+		TotalBillingErrored: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hookrelay_total_billing_error",
+				Help: "Total number of billing event errored",
+			},
+			[]string{WorkerLabel},
+		),
+		TotalEventsBilled: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hookrelay_total_billing_events",
+				Help: "Total number of events ingested",
+			},
+			[]string{WorkerLabel},
+		),
+		BillingLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "hookrelay_deliverydb_latency",
+				Name:    "hookrelay_billing_latency",
 				Help:    "Total time (in milliseconds) to fetch subscribers from db",
 				Buckets: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
 			},
-			[]string{DeliveryDbSourceLabel},
+			[]string{WorkerLabel},
 		),
 	}
 
@@ -243,13 +272,37 @@ func (m *Metrics) RecordSubscriberDbLatency(owner, eventType string, createdAt *
 	m.SubscriberDbLatency.With(prometheus.Labels{OwnerLabel: owner, EventTypeLabel: eventType}).Observe(t)
 }
 
-func (m *Metrics) RecordDeliveryDbLatency(dbSource string, createdAt *time.Time) {
+func (m *Metrics) IncrementBillingPublished(worker string) {
 	if !m.IsEnabled {
 		return
 	}
-	d := time.Since(*createdAt)
+	m.TotalBillingPublished.With(prometheus.Labels{WorkerLabel: worker}).Inc()
+}
+
+func (m *Metrics) IncrementBillingErrored(worker string) {
+	if !m.IsEnabled {
+		return
+	}
+	m.TotalBillingErrored.With(prometheus.Labels{WorkerLabel: worker}).Inc()
+}
+
+func (m *Metrics) IncrementEventsBilled(worker string, cnt int) {
+	if !m.IsEnabled {
+		return
+	}
+	if cnt < 0 {
+		return
+	}
+	m.TotalEventsBilled.With(prometheus.Labels{WorkerLabel: worker}).Add(float64(cnt))
+}
+
+func (m *Metrics) RecordBillingLatency(worker string, createdAt time.Time) {
+	if !m.IsEnabled {
+		return
+	}
+	d := time.Since(createdAt)
 	t := float64(d) / float64(time.Millisecond)
-	m.DeliveryDbLatency.With(prometheus.Labels{DeliveryDbSourceLabel: dbSource}).Observe(t)
+	m.BillingLatency.With(prometheus.Labels{WorkerLabel: worker}).Observe(t)
 }
 
 func Reg() *prometheus.Registry {

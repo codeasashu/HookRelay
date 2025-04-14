@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/event"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/subscription"
@@ -125,22 +124,6 @@ func (ed *EventDelivery) Execute(wrkr worker.Worker) error {
 
 func (ed *EventDelivery) Retries() int {
 	return int(ed.MaxRetries)
-}
-
-func SaveDeliveries(f *app.HookRelayApp) func(deliveries []worker.Task) error {
-	if f.WAL != nil {
-		return func(deliveries []worker.Task) error {
-			return LogBatchEventDelivery(f.WAL, deliveries)
-		}
-	} else if f.DeliveryDb != nil {
-		return func(deliveries []worker.Task) error {
-			startTime := time.Now()
-			err := SaveBatchEventDelivery(f.DeliveryDb, deliveries)
-			f.Metrics.RecordDeliveryDbLatency("direct", &startTime)
-			return err
-		}
-	}
-	return nil
 }
 
 func (ed *EventDelivery) IsSuccess() bool {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/codeasashu/HookRelay/internal/config"
 	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/logger"
@@ -19,12 +20,13 @@ type HookRelayApp struct {
 	Cfg     *config.Config
 	Metrics *metrics.Metrics
 
+	SQSClient *sqs.Client
+
 	Router     *gin.Engine
 	HttpServer *http.Server
 	Logger     *slog.Logger
 
 	SubscriptionDb database.Database
-	DeliveryDb     database.Database
 	WAL            wal.AbstractWAL
 	HttpClient     *http.Client
 }
@@ -85,12 +87,6 @@ func (a *HookRelayApp) InitSubscriptionDb() error {
 	return err
 }
 
-func (a *HookRelayApp) InitDeliveryDb() error {
-	db, err := deliveryDb(a)
-	a.DeliveryDb = db
-	return err
-}
-
 func initMetrics(f *HookRelayApp) *metrics.Metrics {
 	mt := metrics.NewMetrics(f.Cfg)
 	mt.MetricsMiddleware(f.Router)
@@ -121,14 +117,6 @@ func newServer(f *HookRelayApp) *http.Server {
 
 func subscriptionDb(f *HookRelayApp) (database.Database, error) {
 	db, err := database.NewMySQLStorage(f.Cfg.Subscription.Database)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-func deliveryDb(f *HookRelayApp) (database.Database, error) {
-	db, err := database.NewMySQLStorage(f.Cfg.Delivery.Database)
 	if err != nil {
 		return nil, err
 	}

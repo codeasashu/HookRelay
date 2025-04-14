@@ -9,6 +9,7 @@ import (
 
 	"github.com/codeasashu/HookRelay/internal/app"
 	"github.com/codeasashu/HookRelay/internal/delivery"
+	"github.com/codeasashu/HookRelay/internal/publisher"
 	"github.com/codeasashu/HookRelay/internal/worker"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
@@ -45,26 +46,30 @@ func handleWorker(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	mainApp.InitDeliveryDb()
-
 	wrk := worker.NewQueueServer(mainApp, getUnmarshalerMap())
+
+	// Add publishers to worker result threada
+	billingPublisher := publisher.NewBillingPublisher(mainApp, &mainApp.Cfg.Billing)
+	billingPublisher.SQSPublisher(ctx, wrk.Fanout)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		slog.Info("staring queue worker")
-		go wrk.StartServer(delivery.SaveDeliveries(mainApp))
+		go wrk.StartServer()
 	}()
 
 	select {
 	case <-ctx.Done():
 		mainApp.Shutdown(ctx)
+		billingPublisher.Shutdown()
 		wrk.Shutdown()
 		break
 
 	case <-sigs:
 		slog.Info("shutting down worker...")
 		mainApp.Shutdown(ctx)
+		billingPublisher.Shutdown()
 		wrk.Shutdown()
 		break
 	}

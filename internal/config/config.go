@@ -68,14 +68,13 @@ db.database = "hookrelay"
 db.options = "tls-insecure-skip-verify=false&connect_timeout=30"
 db.port = 3306
 
-[delivery]
-db.scheme = "mysql"
-db.host = "localhost"
-db.username = "admin"
-db.password = "admin"
-db.database = "hookrelay"
-db.options = "tls-insecure-skip-verify=false&connect_timeout=30"
-db.port = 3306
+[billing]
+aws_access_key_id = ""
+aws_secret_access_key = ""
+aws_region = "ap-south-1"
+sqs_url = ""
+batch_mode = 0
+batch_duration = 500  # in milliseconds
 `
 )
 
@@ -158,8 +157,13 @@ type SubscriptionConfig struct {
 	Database DatabaseConfig `mapstructure:"db"`
 }
 
-type DeliveryConfig struct {
-	Database DatabaseConfig `mapstructure:"db"`
+type BillingConfig struct {
+	AccessKeyID   string `mapstructure:"aws_access_key_id"`
+	SecretKey     string `mapstructure:"aws_secret_access_key"`
+	Region        string `mapstructure:"aws_region"`
+	SQSUrl        string `mapstructure:"sqs_url"`
+	BatchMode     bool   `mapstructure:"batch_mode"`
+	BatchDuration uint32 `mapstructure:"batch_duration"`
 }
 
 type Config struct {
@@ -171,7 +175,6 @@ type Config struct {
 
 	// Subscription
 	Subscription SubscriptionConfig `mapstructure:"subscription"`
-	Delivery     DeliveryConfig     `mapstructure:"delivery"`
 
 	// Worker
 	LocalWorker LocalWorkerConfig `mapstructure:"local_worker"`
@@ -179,6 +182,8 @@ type Config struct {
 
 	// TargetConfig
 	HttpTarget HttpTargetConfig `json:"http_target" mapstructure:"http_target"`
+
+	Billing BillingConfig `mapstructure:"billing"`
 }
 
 func LoadConfig(customConfigPath string) (*Config, error) {

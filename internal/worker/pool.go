@@ -39,6 +39,7 @@ type Worker interface {
 	GetID() string
 	GetType() WorkerType
 	GetMetricsHandler() *metrics.Metrics
+	BroadcastResult(t Task)
 }
 
 type Task interface {
@@ -57,16 +58,6 @@ func InitPool(f *app.HookRelayApp) *WorkerPool {
 		metrics: f.Metrics,
 	}
 	return wp
-}
-
-func CreateLocalWorker(f *app.HookRelayApp, wp *WorkerPool, callback func(tasks []Task) error) *LocalWorker {
-	lw := NewLocalWorker(f, wp, callback)
-	return lw
-}
-
-func CreateQueueWorker(f *app.HookRelayApp, marshaler MarshalerMap, callback func([]Task) error) *QueueWorker {
-	lw := NewQueueWorker(f, marshaler)
-	return lw
 }
 
 func (wp *WorkerPool) SetLocalClient(c Worker) error {

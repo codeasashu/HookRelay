@@ -6,7 +6,7 @@ set -e
 APP_NAME="hookrelay"
 BINARY_PATH="/usr/local/bin/$APP_NAME"
 CFG_FILE="/etc/hookrelay/config.toml"
-LOG_DIR="/var/log/$APP_NAME"
+LOG_DIR="/var/log/app/$APP_NAME"
 
 # Deploy binary to system
 mv ./bin/$APP_NAME $BINARY_PATH
