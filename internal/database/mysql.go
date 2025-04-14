@@ -22,7 +22,7 @@ type MySQL struct {
 	randGen  *rand.Rand
 }
 
-func NewMySQLStorage(dbConfig config.DatabaseConfiguration) (*MySQL, error) {
+func NewMySQLStorage(dbConfig config.DatabaseConfig) (*MySQL, error) {
 	primary, err := parseMysqlDBConfig(dbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MySQL: %v", err)
@@ -51,7 +51,7 @@ func NewMySQLStorage(dbConfig config.DatabaseConfiguration) (*MySQL, error) {
 	return primary, err
 }
 
-func parseMysqlDBConfig(dbConfig config.DatabaseConfiguration) (*MySQL, error) {
+func parseMysqlDBConfig(dbConfig config.DatabaseConfig) (*MySQL, error) {
 	cfg := mysql.Config{
 		User:                 dbConfig.Username,
 		Passwd:               dbConfig.Password,
@@ -62,7 +62,7 @@ func parseMysqlDBConfig(dbConfig config.DatabaseConfiguration) (*MySQL, error) {
 		ParseTime:            true,
 	}
 
-	slog.Info("Connecting to mysql...")
+	slog.Info("Connecting to mysql...", "host", dbConfig.Host, "port", dbConfig.Port, "database", dbConfig.Database)
 	db, err := sqlx.Connect("mysql", cfg.FormatDSN())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MySQL: %w", err)

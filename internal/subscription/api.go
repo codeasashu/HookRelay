@@ -1,31 +1,31 @@
 package subscription
 
 import (
+	"log/slog"
 	"net/http"
 
-	"github.com/codeasashu/HookRelay/internal/api"
-	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/subscription"
 	"github.com/codeasashu/HookRelay/internal/target"
 	"github.com/gin-gonic/gin"
 )
 
-func AddRoutes(server *api.ApiServer) {
+func (s *Subscription) InitApiRoutes() {
 	{
-		v1 := server.Router.Group("/subscriptions")
-		v1.POST("", createSubscriptionHandler(server.App))
+		v1 := s.router.Group("/subscriptions")
+		v1.POST("", createSubscriberHandler(s))
 	}
 }
 
-func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
+func createSubscriberHandler(s *Subscription) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cs *subscription.ReadSubscription
+		var cs *ReadSubscriber
 		if err := c.ShouldBindJSON(&cs); err != nil {
 			c.JSON(400, gin.H{"status": "error", "error": err.Error()})
 			return
 		}
 
-		s := &subscription.Subscription{
+		slog.Info("createSubscriberHandler", "cs", cs)
+
+		sub := &Subscriber{
 			ID:      cs.ID,
 			OwnerId: cs.OwnerId,
 			Target: &target.Target{
@@ -37,14 +37,16 @@ func createSubscriptionHandler(app *cli.App) gin.HandlerFunc {
 			Status:     cs.Status,
 			CreatedAt:  cs.CreatedAt,
 		}
-		model := subscription.NewSubscriptionModel(app.DB)
-		err := model.CreateSubscription(s)
+		err := s.CreateSubscriber(sub)
 		if err != nil {
 			switch err {
-			case subscription.ErrSubscriptionExists:
+			case ErrSubscriptionExists:
 				c.JSON(409, gin.H{"status": "error", "error": err.Error()})
 				return
-			case subscription.ErrSubscriptionNotCreated:
+			case ErrLegacySubscription:
+				c.JSON(409, gin.H{"status": "error", "error": err.Error()})
+				return
+			case ErrSubscriptionNotCreated:
 				c.JSON(500, gin.H{"status": "error", "error": err.Error()})
 				return
 			default:

@@ -1,13 +1,10 @@
 package wal
 
 import (
-	"errors"
-	"fmt"
+	"database/sql"
 	"log/slog"
 	sync "sync"
 	"time"
-
-	"github.com/codeasashu/HookRelay/internal/event"
 )
 
 type key string
@@ -17,13 +14,12 @@ const (
 )
 
 type AbstractWAL interface {
-	LogEvent(e *event.Event) error
-	LogEventDelivery(e *event.EventDelivery) error
-	LogBatchEventDelivery(events []*event.EventDelivery) error
-	Close() error
 	Init(t time.Time) error
-	ForEachEvent(f func(e event.Event) error) error
-	ForEachEventDeliveriesBatch(batchSize int, f func(e []*event.EventDelivery) error) error
+	GetDB() *sql.DB
+	Log(callback func(db *sql.DB) error) error
+	GetMutex() *sync.Mutex
+	Close() error
+	ForEachRotation(callbacks []func(db *sql.DB) error) error
 }
 
 var (
@@ -67,9 +63,9 @@ func periodicRotate(wl AbstractWAL) {
 	}
 }
 
-func InitBG(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
+func InitBG(wl AbstractWAL, callbacks []func(db *sql.DB) error) {
 	go periodicRotate(wl)
-	go periodicReplay(wl, batchSize, callbacks)
+	go periodicReplay(wl, callbacks)
 }
 
 func ShutdownBG() {
@@ -81,22 +77,12 @@ func ShutdownBG() {
 	time.Sleep(1 * time.Second)
 }
 
-func ReplayWAL(wl AbstractWAL) {
-	err := wl.ForEachEvent(func(c event.Event) error {
-		fmt.Println("replaying", c.UID, c.EventType)
-		return nil
-	})
-	if err != nil {
-		slog.Warn("error replaying WAL", slog.Any("error", err))
-	}
-}
-
-func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
-	slog.Info("starting periodic replay worker", "batch", batchSize)
+func periodicReplay(wl AbstractWAL, callbacks []func(db *sql.DB) error) {
+	slog.Info("starting periodic replay worker")
 	for {
 		select {
 		case <-replayTicker.C:
-			replayWALBatch(wl, batchSize, callbacks)
+			replayWALBatch(wl, callbacks)
 		case <-stopReplayCh:
 			wl.Close()
 			return
@@ -104,39 +90,22 @@ func periodicReplay(wl AbstractWAL, batchSize int, callbacks []func([]*event.Eve
 	}
 }
 
-func replayWALBatch(wl AbstractWAL, batchSize int, callbacks []func([]*event.EventDelivery) error) {
-	slog.Info("replaying event deliveries", "batch", batchSize)
-	err := wl.ForEachEventDeliveriesBatch(batchSize, func(c []*event.EventDelivery) error {
-		slog.Info("replayed event deliveries", "batch", len(c))
-		var wg sync.WaitGroup
-		for _, cb := range callbacks {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				cb(c)
-			}()
-		}
-		// Wait for all callbacks to finish, asyncronously
-		// @TODO: Use timeout context to cancel callback execution after certain timeout
-		wg.Wait()
-		return nil
-	})
+func replayWALBatch(wl AbstractWAL, callbacks []func(db *sql.DB) error) {
+	slog.Info("replaying event deliveries")
+	err := wl.ForEachRotation(callbacks)
 	if err != nil {
 		slog.Warn("error replaying WAL", slog.Any("error", err))
 	}
-	// wg.Wait()
 	slog.Info("Sync and recovery completed")
 }
 
-func DoAccounting(accounting *Accounting, e []*event.EventDelivery) error {
-	if accounting == nil {
-		slog.Warn("accounting not initialized, skipping...")
-		return errors.New("accounting not initialized")
-	}
-	accounting.CreateDeliveries(e)
-	return nil
-}
-
-// if w.accounting != nil {
-// 	w.accounting.db.Close()
+//
+// func DoAccounting(accounting *Accounting, e []*delivery.EventDelivery) error {
+// 	if accounting == nil {
+// 		slog.Warn("accounting not initialized, skipping...")
+// 		return errors.New("accounting not initialized")
+// 	}
+// 	accounting.CreateDeliveries(e)
+// 	return nil
 // }
+//

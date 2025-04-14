@@ -44,7 +44,7 @@ const EVENT_TYPES = [
   "inventory.updated",
 ];
 // const OWNER_IDS = ["owner1", "owner2", "owner3"];
-const OWNER_IDS = ["owner"];
+const OWNER_IDS = ["670f63da5fd9588"];
 
 // Setup function to create endpoints and subscriptions
 export function setup() {
@@ -83,12 +83,15 @@ export default function (data) {
       timestamp: new Date().toISOString(),
       data: { foo: "bar" },
     },
-    owner_id: owner,
-    event_type: eventType,
+    owner_id: "670f63da5fd95887",
+    event_type: "webhook.incall",
   };
 
   const res = http.post(`${baseUrl}/event`, JSON.stringify(event), {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Hookrelay-Trace-Id": "webhook123",
+    },
   });
 
   // Check response

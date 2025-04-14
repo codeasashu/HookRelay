@@ -1,77 +1,107 @@
 package worker
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"sync"
 
-	"github.com/codeasashu/HookRelay/internal/cli"
-	"github.com/codeasashu/HookRelay/internal/event"
+	"github.com/codeasashu/HookRelay/internal/app"
+	"github.com/codeasashu/HookRelay/internal/metrics"
+)
+
+var (
+	ErrTooManyRetry = errors.New("job: too many retries")
+	ErrRemoteJob    = errors.New("job: remote job error")
+)
+
+type WorkerType string
+
+const (
+	LocalWorkerType WorkerType = "local"
+	QueueWorkerType WorkerType = "queue"
 )
 
 // @TODO: Make this a linked list to support multiple workers
 type WorkerPool struct {
-	localClient *LocalClient
-	queueClient *QueueClient
+	mu          *sync.Mutex
+	metrics     *metrics.Metrics
+	localWorker Worker
+	queueWorker Worker
 }
 
-func (wp *WorkerPool) AddLocalClient(app *cli.App, ctx context.Context, callback func([]*event.EventDelivery) error) error {
-	lw := NewLocalWorker(app, callback)
-	wp.localClient = lw.client.(*LocalClient)
-	slog.Info("added local worker")
+type Worker interface {
+	Enqueue(t Task) error
+	Ping() error
+	// IsNearlyFull() bool
+	Shutdown()
+	IsReady() bool
+	GetID() string
+	GetType() WorkerType
+	GetMetricsHandler() *metrics.Metrics
+	BroadcastResult(t Task)
+}
+
+type Task interface {
+	GetID() string
+	GetTraceID() string
+	GetType() string
+	Execute(worker Worker) error
+	Retries() int
+	NumDeliveries() int // Get number of deliveries till now
+	IncDeliveries()     // Increment deliveries
+}
+
+func InitPool(f *app.HookRelayApp) *WorkerPool {
+	wp := &WorkerPool{
+		mu:      &sync.Mutex{},
+		metrics: f.Metrics,
+	}
+	return wp
+}
+
+func (wp *WorkerPool) SetLocalClient(c Worker) error {
+	wp.localWorker = c
+	slog.Info("local worker: connected")
 	return nil
 }
 
-func (wp *WorkerPool) AddQueueClient() error {
-	qc := NewQueueWorker()
-	wp.queueClient = qc.client.(*QueueClient)
-	if err := wp.queueClient.client.Ping(); err != nil {
+func (wp *WorkerPool) SetQueueClient(c Worker) error {
+	if err := c.Ping(); err != nil {
 		slog.Warn("remote worker queue is not connected. only local workers will be used", "err", err)
 		return err
 	}
-	slog.Info("remote worker queue is connected")
+	wp.queueWorker = c
+	slog.Info("queue worker: connected")
 	return nil
 }
 
-func (wp *WorkerPool) ShouldUseRemote(job *Job) bool {
-	// Checks if jobs should be scheduled to remote worker
-	// based on several criterias
-	localWorkerFull := wp.localClient != nil && wp.localClient.IsNearlyFull()
-	remoteIsReady := wp.queueClient != nil
-	// remoteIsReady := wp.queueClient != nil && wp.queueClient.IsReady()
-	return (localWorkerFull && remoteIsReady) || (job.isRetrying && remoteIsReady)
+// Checks if jobs should be scheduled to remote worker
+func (wp *WorkerPool) ShouldUseRemote(job Task, isRetrying bool) bool {
+	remoteIsReady := wp.queueWorker != nil && wp.queueWorker.IsReady()
+	localIsReady := wp.localWorker != nil && wp.localWorker.IsReady()
+
+	// prioritise local worker
+	return (!localIsReady && remoteIsReady) || (isRetrying && remoteIsReady)
 }
 
-func (wp *WorkerPool) Schedule(job *Job) error {
-	job.wp = wp
-	if wp.ShouldUseRemote(job) {
-		slog.Info("scheduling job to queue worker", "job", job)
-		return wp.queueClient.SendJob(job)
+func (wp *WorkerPool) Schedule(t Task, isRetrying bool) error {
+	if wp.ShouldUseRemote(t, isRetrying) {
+		slog.Info("scheduling job to queue worker", "trace_id", t.GetTraceID(), "isRetrying", isRetrying)
+		return wp.queueWorker.Enqueue(t)
 	}
-	if wp.localClient != nil {
-		slog.Info("scheduling job to local worker", "job", job)
-		return wp.localClient.SendJob(job)
+	if wp.localWorker != nil {
+		slog.Info("scheduling job to local worker", "trace_id", t.GetTraceID(), "isRetrying", isRetrying)
+		return wp.localWorker.Enqueue(t)
 	}
-	return errors.New("error scheduling job. no worker available")
-}
-
-func (wp *WorkerPool) Retry(job *Job) error {
-	if wp.localClient != nil && !wp.localClient.IsNearlyFull() {
-		slog.Info("scheduling job to local worker", "job", job)
-		return wp.localClient.SendJob(job)
-	} else if wp.queueClient != nil && wp.queueClient.IsReady() {
-		slog.Info("scheduling job to queue worker", "job", job)
-		return wp.queueClient.SendJob(job)
-	} else {
-		return errors.New("error scheduling job. no worker available")
-	}
+	return fmt.Errorf("error scheduling job (trace_id=%s). no worker available", t.GetTraceID())
 }
 
 func (wp *WorkerPool) Shutdown() {
-	if wp.localClient != nil {
-		wp.localClient.Stop()
+	if wp.localWorker != nil {
+		wp.localWorker.Shutdown()
 	}
-	if wp.queueClient != nil {
-		wp.queueClient.Close()
+	if wp.queueWorker != nil {
+		wp.queueWorker.Shutdown()
 	}
 }

@@ -1,0 +1,6 @@
+with-expecter: True
+dir: tests/mocks
+packages:
+  github.com/codeasashu/HookRelay/internal/database:
+    interfaces:
+      Database:

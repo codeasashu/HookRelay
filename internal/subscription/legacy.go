@@ -95,12 +95,12 @@ func (l *LegacySubscription) GetTarget() (*target.Target, error) {
 	)
 }
 
-func (l *LegacySubscription) ConvertToSubscription() (*Subscription, error) {
+func (l *LegacySubscription) ConvertToSubscription() (*Subscriber, error) {
 	t, err := l.GetTarget()
 	if err != nil {
 		return nil, err
 	}
-	return &Subscription{
+	return &Subscriber{
 		ID:         l.ID,
 		OwnerId:    l.CompanyId,
 		EventTypes: l.GetEventTypes(),

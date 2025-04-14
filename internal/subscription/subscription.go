@@ -8,14 +8,35 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/codeasashu/HookRelay/internal/cli"
+	"github.com/codeasashu/HookRelay/internal/app"
+	"github.com/codeasashu/HookRelay/internal/database"
 	"github.com/codeasashu/HookRelay/internal/metrics"
 	"github.com/codeasashu/HookRelay/internal/target"
+	"github.com/gin-gonic/gin"
 )
 
 var m *metrics.Metrics
 
 type Subscription struct {
+	router     *gin.Engine
+	metrics    *metrics.Metrics
+	db         database.Database
+	legacyMode bool
+}
+
+func NewSubscription(f *app.HookRelayApp, legacyMode bool) (*Subscription, error) {
+	if legacyMode {
+		slog.Warn("Running subscription module in legacy mode. This is not recommended.")
+	}
+	return &Subscription{
+		db:         f.SubscriptionDb,
+		router:     f.Router,
+		metrics:    f.Metrics,
+		legacyMode: legacyMode,
+	}, nil
+}
+
+type Subscriber struct {
 	ID         string
 	OwnerId    string          `json:"owner_id" binding:"required" db:"owner_id"`
 	Target     *target.Target  `json:"target"`
@@ -24,11 +45,13 @@ type Subscription struct {
 	Tags       []string        `json:"tags"`
 	Status     int             `json:"status" db:"status"`
 	CreatedAt  time.Time       `json:"created_at"`
+
+	db database.Database
 }
 
-type ReadSubscription struct {
+type ReadSubscriber struct {
 	Target *target.HTTPDetails `json:"target" binding:"required"`
-	*Subscription
+	*Subscriber
 }
 
 func genSHA(str string) (string, error) {
@@ -40,8 +63,8 @@ func genSHA(str string) (string, error) {
 	return sha1_hash, nil
 }
 
-func (s *ReadSubscription) UnmarshalJSON(data []byte) error {
-	type Alias ReadSubscription
+func (s *ReadSubscriber) UnmarshalJSON(data []byte) error {
+	type Alias ReadSubscriber
 
 	temp := &struct {
 		*Alias
@@ -70,14 +93,10 @@ func (s *ReadSubscription) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func Init() {
-	m = metrics.GetDPInstance()
-}
-
-func CreateSubscription(app *cli.App, cs *Subscription) error {
-	model := NewSubscriptionModel(app.DB)
-	if err := model.CreateSubscription(cs); err != nil {
-		return err
-	}
-	return nil
-}
+// func CreateSubscriber(app *cli.App, cs *Subscriber) error {
+// 	model := NewSubscriptionModel(app.DB)
+// 	if err := model.CreateSubscriber(cs); err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
