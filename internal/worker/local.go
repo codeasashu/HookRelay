@@ -93,11 +93,11 @@ func (c *LocalWorker) scaleThreads(interval time.Duration) {
 			c.metrics.UpdateWorkerQueueSize(queueLen)
 			if queueLen > 0 && (c.MaxThreads == -1 || active < int32(c.MaxThreads)) {
 				// Increase threads if the queue is filling up.
-				slog.Debug("increasing worker threas", "worker_id", c.ID)
+				slog.Info("increasing worker threads", "worker_id", c.ID)
 				c.launchThread()
 			} else if queueLen == 0 && active > int32(c.MinThreads) {
 				// Reduce threads if the queue is empty.
-				slog.Debug("decreasing worker threads", "worker_id", c.ID)
+				slog.Info("decreasing worker threads", "worker_id", c.ID)
 				c.terminateThread()
 			}
 		case <-c.StopChan:
@@ -126,21 +126,23 @@ func (w *LocalWorker) BroadcastResult(t Task) {
 
 // launchThread starts a new thread to process jobs.
 func (w *LocalWorker) launchThread() {
+	slog.Info("Increasing Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 	w.wg.Add(1)
 	atomic.AddInt32(&w.activeThreads, 1)
 
-	slog.Debug("Increased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
+	slog.Info("Increased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 	go func() {
 		defer func() {
-			w.wg.Done()
+			defer w.wg.Done()
+			slog.Info("Decreasing Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 			atomic.AddInt32(&w.activeThreads, -1)
-			slog.Debug("Decreased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
+			slog.Info("Decreased Worker threads by 1", "worker_id", w.ID, "current_count", w.activeThreads)
 		}()
 
 		for {
 			select {
 			case task := <-w.JobQueue:
-				slog.Info("local worker processing task", "trace_id", task.GetTraceID())
+				slog.Info("local worker processing task", "trace_id", task.GetTraceID(), "current_count", w.activeThreads, "queueuSize", len(w.JobQueue), "worker_id", w.ID)
 				err := task.Execute(w)
 				task.IncDeliveries()
 				retryErr := w.handleRetry(task, err)

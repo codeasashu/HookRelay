@@ -246,6 +246,7 @@ func (m *Metrics) RecordPreFlightLatency(listener string, createdAt *time.Time) 
 	}
 	d := time.Since(*createdAt)
 	t := float64(d) / float64(time.Millisecond)
+	slog.Info("PreFlightLatency", slog.Duration("duration", d), slog.Float64("latency_ms", t))
 	m.PreFlightLatency.With(prometheus.Labels{ListenerLabel: listener}).Observe(t)
 }
 
