@@ -18,7 +18,7 @@ cat >/etc/supervisor/conf.d/$APP_NAME.conf <<EOF
 programs=server,worker
 
 [program:server]
-command=$BINARY_PATH server -c $CFG_FILE
+command=$BINARY_PATH server -c $CFG_FILE -l
 startsecs=3
 autostart=true
 autorestart=true
