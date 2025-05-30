@@ -13,11 +13,11 @@ import (
 )
 
 type Event struct {
-	UID            int64       `json:"uid"`
-	Payload        interface{} `json:"payload"`
-	OwnerId        string      `json:"owner_id"`
-	EventType      string      `json:"event_type"`
-	IdempotencyKey string      `json:"idempotency_key"`
+	UID            int64  `json:"uid"`
+	Payload        any    `json:"payload"`
+	OwnerId        string `json:"owner_id"`
+	EventType      string `json:"event_type"`
+	IdempotencyKey string `json:"idempotency_key"`
 	CreatedAt      time.Time
 	AcknowledgedAt time.Time
 	PayloadBytes   []byte

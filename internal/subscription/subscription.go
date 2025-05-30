@@ -15,8 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var m *metrics.Metrics
-
 type Subscription struct {
 	router     *gin.Engine
 	metrics    *metrics.Metrics
@@ -24,15 +22,12 @@ type Subscription struct {
 	legacyMode bool
 }
 
-func NewSubscription(f *app.HookRelayApp, legacyMode bool) (*Subscription, error) {
-	if legacyMode {
-		slog.Warn("Running subscription module in legacy mode. This is not recommended.")
-	}
+func NewSubscription(f *app.HookRelayApp) (*Subscription, error) {
 	return &Subscription{
 		db:         f.SubscriptionDb,
 		router:     f.Router,
 		metrics:    f.Metrics,
-		legacyMode: legacyMode,
+		legacyMode: false,
 	}, nil
 }
 
@@ -45,8 +40,7 @@ type Subscriber struct {
 	Tags       []string        `json:"tags"`
 	Status     int             `json:"status" db:"status"`
 	CreatedAt  time.Time       `json:"created_at"`
-
-	db database.Database
+	ModifiedAt time.Time       `json:"modified_at"`
 }
 
 type ReadSubscriber struct {

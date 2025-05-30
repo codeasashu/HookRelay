@@ -1,0 +1,433 @@
+openapi: 3.1.0
+info:
+  title: Webhook Management API
+  version: v1
+  description: API for creating, reading, updating, and deleting webhooks. Webhooks are typically scoped to an owner (e.g., company_id), which is determined from the authentication context.
+
+servers:
+  - url: https://api.example.com/v1 # Replace with your actual API base URL
+    description: Production Server
+  - url: http://localhost:8080/v1 # Replace with your local dev API base URL
+    description: Local Development Server
+
+components:
+  schemas:
+    # ---- HTTP Basic Authentication Schemas ----
+    HTTPBasicAuthRequest:
+      type: object
+      description: HTTP Basic Authentication credentials for the webhook target.
+      properties:
+        username:
+          type: string
+          description: Username for Basic Authentication.
+        password:
+          type: string
+          format: password # Suggests a sensitive field to UI tools
+          description: Password for Basic Authentication.
+      required:
+        - username
+        - password
+
+    HTTPBasicAuthResponse:
+      type: object
+      description: HTTP Basic Authentication details (password is omitted).
+      properties:
+        username:
+          type: string
+          description: Username configured for Basic Authentication.
+      # Password is intentionally not included in API responses.
+
+    # ---- HTTP Details Schemas (for Target) ----
+    HTTPDetailsRequest:
+      type: object
+      description: Configuration for an HTTP-based webhook target.
+      properties:
+        url:
+          type: string
+          format: url
+          description: The endpoint URL where the webhook notification will be sent.
+        method:
+          type: string
+          enum: [GET, POST]
+          default: GET
+          description: HTTP method to be used for the webhook request.
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Key-value pairs of custom HTTP headers to be sent with the webhook.
+          example: { "Content-Type": "application/json", "X-API-Key": "secret" }
+        auth: # Corresponds to BasicAuth in your Go struct (json:"auth")
+          $ref: "#/components/schemas/HTTPBasicAuthRequest"
+          nullable: true
+      required:
+        - url
+        - method
+
+    HTTPDetailsResponse:
+      type: object
+      description: Configuration for an HTTP-based webhook target (response view).
+      properties:
+        url:
+          type: string
+          format: url
+        method:
+          type: string
+          enum: [GET, POST]
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        auth:
+          $ref: "#/components/schemas/HTTPBasicAuthResponse"
+          nullable: true
+
+    # ---- HTTP Target Response Info (for last delivery attempt) ----
+    HTTPTargetDeliveryResponse: # Renamed from HTTPTargetResponseInfo for clarity
+      type: object
+      description: Information about the last delivery attempt to the HTTP target.
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed, pending, unknown] # Define your actual TargetStatus enum values
+          description: Status of the last delivery attempt.
+        code:
+          type: integer
+          format: int32
+          description: HTTP status code received from the target endpoint during the last attempt.
+        body:
+          type: string
+          description: Response body received from the target (may be truncated or summarized).
+          nullable: true
+      nullable: true # The whole http_response object can be null if no attempt made yet
+
+    # ---- Target Schemas ----
+    TargetRequest:
+      type: object
+      description: Defines the target for the webhook.
+      properties:
+        type:
+          type: string
+          enum: [http] # Currently only "http"
+          default: http
+          description: The type of the webhook target.
+        http_details:
+          $ref: "#/components/schemas/HTTPDetailsRequest"
+      required:
+        - type
+        - http_details
+
+    TargetResponse:
+      type: object
+      description: Defines the target for the webhook (response view).
+      properties:
+        type:
+          type: string
+          enum: [http]
+        http_details:
+          $ref: "#/components/schemas/HTTPDetailsResponse"
+        http_response: # Information about the last delivery
+          $ref: "#/components/schemas/HTTPTargetDeliveryResponse"
+      required:
+        - type
+        - http_details # http_response is optional
+
+    # ---- Base Webhook Schema (Common fields for request) ----
+    WebhookBase:
+      type: object
+      properties:
+        event_types:
+          type: array
+          items:
+            type: string
+            enum: [webhook.incall, webhook.aftercall] # Add all your valid event types
+          minItems: 1
+          description: Array of event types this webhook subscribes to.
+          example: ["webhook.aftercall"]
+        target:
+          $ref: "#/components/schemas/TargetRequest"
+        filters:
+          type: object
+          additionalProperties: true # Allows any valid JSON structure
+          nullable: true
+          description: JSON object defining conditions for filtering events.
+          example: { "call_duration_gt": 60 }
+        tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Array of custom string tags for organizing webhooks.
+          example: ["sales-dept", "priority"]
+        status:
+          type: integer
+          enum: [0, 1] # 0 for Inactive, 1 for Active
+          description: Status of the webhook. 1 for Active, 0 for Inactive.
+      required:
+        - event_types
+        - target
+        - status
+
+    # ---- Webhook Request Schema (for POST/PUT body) ----
+    WebhookRequest:
+      description: Webhook payload for creating or updating a webhook. ID is not included in the request body.
+      allOf:
+        - $ref: "#/components/schemas/WebhookBase"
+      # This schema inherits all properties and requirements from WebhookBase.
+      # It explicitly does not include 'id', 'owner_id', or 'created_at'.
+
+    # ---- Webhook Response Schema (for GET response, POST/PUT response body) ----
+    WebhookResponse:
+      description: Representation of a webhook, including server-generated fields.
+      type: object
+      properties:
+        id:
+          type: string
+          # format: uuid # Or remove if IDs are not UUIDs. Your example '68383e909836f346' is not a UUID.
+          description: Unique identifier for the webhook.
+          readOnly: true
+        owner_id:
+          type: string
+          description: Identifier of the owner (e.g., company_id) of this webhook. Determined by the server based on authentication.
+          readOnly: true
+          nullable: true # If it might not always be present or applicable
+        # Fields from WebhookBase, but 'target' uses TargetResponse
+        event_types:
+          type: array
+          items:
+            type: string
+            enum: [webhook.incall, webhook.aftercall] # Ensure consistency
+          minItems: 1
+        target:
+          $ref: "#/components/schemas/TargetResponse" # Uses the response version of Target
+        filters:
+          type: object
+          additionalProperties: true
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+        status:
+          type: integer
+          enum: [0, 1]
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp of when the webhook was created (ISO 8601).
+          readOnly: true
+      required:
+        - id
+        # - owner_id # Uncomment if owner_id is always present and required in response
+        - event_types
+        - target
+        - status
+        - created_at
+
+    # ---- Generic Error Response Schema ----
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: A human-readable error message.
+        code:
+          type: string # Or integer
+          description: An optional application-specific error code.
+        # details: # Optional field for more detailed validation errors, etc.
+        #   type: object
+        #   additionalProperties: true
+      required:
+        - message
+
+  parameters:
+    WebhookIdPathParameter:
+      name: webhookId
+      in: path
+      required: true
+      description: The unique identifier of the webhook.
+      schema:
+        type: string # Match the type of your webhook IDs
+
+  responses:
+    UnauthorizedError:
+      description: Authentication information is missing or invalid. Requires Bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ForbiddenError:
+      description: Authenticated user does not have permission to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFoundError:
+      description: The requested webhook resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadRequestError: # For malformed requests or validation errors
+      description: The request payload is malformed or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse" # Consider a more detailed validation error schema
+    InternalServerError:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  securitySchemes:
+    BearerAuth: # Define the security scheme
+      type: http
+      scheme: bearer
+      bearerFormat: JWT # Or "Opaque" or just omit if not JWT
+
+security: # Apply the security scheme globally to all operations
+  - BearerAuth: []
+
+paths:
+  /webhooks:
+    post:
+      summary: Create a New Webhook
+      tags:
+        - Webhooks
+      operationId: createWebhook
+      description: Creates a new webhook configuration for the authenticated owner. The webhook ID will be generated by the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookRequest"
+      responses:
+        "201":
+          description: Webhook created successfully. The created webhook resource is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    get:
+      summary: List All Webhooks
+      tags:
+        - Webhooks
+      operationId: listWebhooks
+      description: Retrieves a list of all webhooks configured for the authenticated owner. Supports pagination.
+      parameters: # Optional pagination parameters
+        - name: limit
+          in: query
+          description: Maximum number of webhooks to return.
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of webhooks to skip before starting to collect the result set.
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: A list of webhooks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /webhooks/{webhookId}:
+    parameters:
+      - $ref: "#/components/parameters/WebhookIdPathParameter"
+    get:
+      summary: Get Webhook by ID
+      tags:
+        - Webhooks
+      operationId: getWebhookById
+      description: Retrieves a specific webhook by its unique ID.
+      responses:
+        "200":
+          description: Successfully retrieved the webhook.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      summary: Update an Existing Webhook
+      tags:
+        - Webhooks
+      operationId: updateWebhook
+      description: Updates an existing webhook identified by its ID. The entire webhook configuration should be provided in the request body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookRequest"
+      responses:
+        "200":
+          description: Webhook updated successfully. The updated webhook resource is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      summary: Delete a Webhook
+      tags:
+        - Webhooks
+      operationId: deleteWebhook
+      description: Deletes a specific webhook by its unique ID.
+      responses:
+        "204":
+          description: Webhook deleted successfully. No content is returned.
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"

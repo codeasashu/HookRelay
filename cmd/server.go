@@ -81,8 +81,7 @@ func handleServer(cmd *cobra.Command, args []string) error {
 	}
 
 	// Init subscription
-	legacyMode, _ := cmd.Flags().GetBool("legacy-mode")
-	subscriptionApp, err := subscription.NewSubscription(mainApp, legacyMode)
+	subscriptionApp, err := subscription.NewSubscription(mainApp)
 	if err != nil {
 		return fmt.Errorf("failed to initialize delivery: %v", err)
 	}

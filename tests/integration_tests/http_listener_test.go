@@ -72,7 +72,7 @@ func setupMockApp(t *testing.T, mockDb *mocks.MockDatabase) *app.HookRelayApp {
 	if err != nil {
 		t.Fatalf("Failed to create delivery: %v", err)
 	}
-	subscriptionApp, err := subscription.NewSubscription(mainApp, false)
+	subscriptionApp, err := subscription.NewSubscription(mainApp)
 	if err != nil {
 		t.Fatalf("Failed to create subscription: %v", err)
 	}
